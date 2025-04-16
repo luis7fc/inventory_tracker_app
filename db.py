@@ -4,6 +4,15 @@ import streamlit as st
 import psycopg2
 import bcrypt
 
+@st.cache_resource
+def get_db_connection():
+    return psycopg2.connect(
+        host=st.secrets["DB_HOST"],
+        database=st.secrets["DB_NAME"],
+        user=st.secrets["DB_USER"],
+        password=st.secrets["DB_PASSWORD"]
+    )
+
 
 # --- Get All Location Codes ---
 def get_all_locations():
