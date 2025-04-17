@@ -31,7 +31,7 @@ def run():
             else:
                 create_user(new_username, new_password, new_role)
                 st.success(f"User '{new_username}' created.")
-                st.experimental_rerun()
+                st.rerun()
 
     # --- Delete User ---
     st.subheader("🗑️ Delete User")
@@ -46,7 +46,7 @@ def run():
         else:
             delete_user(selected_id)
             st.success(f"User '{selected_username}' deleted.")
-            st.experimental_rerun()
+            st.rerun()
 
     # --- Reset Password ---
     st.subheader("🔁 Reset User Password")
@@ -63,4 +63,4 @@ def run():
             from db import update_user_password  # Assuming this exists
             update_user_password(user_id, hashed_pw)
             st.success(f"Password reset for user '{reset_user_label.split(' ')[0]}'.")
-            st.experimental_rerun()
+            st.rerun()
