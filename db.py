@@ -241,7 +241,7 @@ def insert_inventory_init_row(conn, item_code, location, quantity, scan_id):
             INSERT INTO inventory_init (item_code, location, quantity, scan_id)
             VALUES (%s, %s, %s, %s)
         """, (item_code, location, quantity, scan_id))
-
+#fit 1
 def upsert_current_inventory(conn, item_code, location, quantity):
     with conn.cursor() as cursor:
         cursor.execute("""
@@ -251,4 +251,20 @@ def upsert_current_inventory(conn, item_code, location, quantity):
             SET quantity = current_inventory.quantity + EXCLUDED.quantity
         """, (item_code, location, quantity))
 
-
+#fit2
+def insert_location_if_not_exists(conn, location_code, warehouse):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO locations (location_code, warehouse)
+            VALUES (%s, %s)
+            ON CONFLICT (location_code) DO NOTHING
+        """, (location_code, warehouse))
+        conn.commit()
+#fit2...
+def insert_inventory_init_row(conn, item_code, location, quantity):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO inventory_init (item_code, location, quantity)
+            VALUES (%s, %s, %s)
+        """, (item_code, location, quantity))
+        conn.commit()
