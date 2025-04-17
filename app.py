@@ -2,14 +2,12 @@ import streamlit as st
 st.set_page_config(page_title="Inventory Tracker", layout="wide")
 
 from auth import login
-from pages import (
-    submit_transaction,
-    upload_init_csv,
-    reports,
-    users,
-    manage_locations,
-    scan_lookup
-)
+import pages.submit_transaction as submit_transaction
+import pages.upload_init_csv as upload_init_csv
+import pages.reports as reports
+import pages.users as users
+import pages.manage_locations as manage_locations
+import pages.scan_lookup as scan_lookup
 
 # --- Run Login ---
 login()
