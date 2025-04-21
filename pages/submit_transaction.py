@@ -90,7 +90,7 @@ def run():
 
         # Check if the target location is multi-item capable
         cursor.execute("""
-            SELECT is_multi_item FROM locations
+            SELECT multi_item_allowed FROM locations
             WHERE location_code = %s AND warehouse = %s
         """, (target_loc, warehouse))
         result = cursor.fetchone()
