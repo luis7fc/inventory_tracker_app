@@ -88,22 +88,33 @@ def run():
 
         target_loc = get_target_location(transaction_type, from_location, to_location)
 
-        if transaction_type != "Manual Adjustment" and target_loc not in STAGING_LOCATIONS:
-            cursor.execute(""" SELECT DISTINCT item_code FROM current_inventory WHERE location = %s AND quantity > 0""", (target_loc,))
-            items_present = cursor.fetchall()
-            if any(existing[0] != item_code for existing in items_present):
-                st.error(f"Location '{target_loc}' already has a different item. Only staging locations can hold multiple item types.")
+        # Check if the target location is multi-item capable
+        cursor.execute("""
+            SELECT is_multi_item FROM locations
+            WHERE location_code = %s AND warehouse = %s
+        """, (target_loc, warehouse))
+        result = cursor.fetchone()
+        is_multi_item = result and result[0]
+
+        if transaction_type != "Manual Adjustment" and not is_multi_item:
+            cursor.execute("""
+                SELECT item_code FROM current_inventory
+                WHERE location = %s AND quantity > 0
+            """, (target_loc,))
+            items_present = [row[0] for row in cursor.fetchall()]
+            if items_present and any(existing != item_code for existing in items_present):
+                st.error(f"Location '{target_loc}' already has a different item with nonzero quantity. Only multi-item locations can hold multiple item types.")
                 st.stop()
 
-        if transaction_type != "Manual Adjustment":
-            cursor.execute("SELECT 1 FROM locations WHERE location_code = %s", (target_loc,))
-            if not cursor.fetchone():
-                st.warning(f"Location '{target_loc}' is not in the locations table. Admin override required.")
-                admin_pass = st.text_input("Enter admin password to override:", type="password")
-                if admin_pass != st.secrets["general"]["admin_password"]:
-                    st.error("Incorrect admin password. Transaction blocked.")
-                    st.stop()
-                bypassed_warning = True
+                if transaction_type != "Manual Adjustment":
+                    cursor.execute("SELECT 1 FROM locations WHERE location_code = %s", (target_loc,))
+                    if not cursor.fetchone():
+                        st.warning(f"Location '{target_loc}' is not in the locations table. Admin override required.")
+                        admin_pass = st.text_input("Enter admin password to override:", type="password")
+                        if admin_pass != st.secrets["general"]["admin_password"]:
+                            st.error("Incorrect admin password. Transaction blocked.")
+                            st.stop()
+                        bypassed_warning = True
 
         # Insert transaction using db helper
         insert_transaction({
