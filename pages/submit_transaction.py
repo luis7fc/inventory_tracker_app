@@ -89,7 +89,7 @@ def run():
         target_loc = get_target_location(transaction_type, from_location, to_location)
 
         if transaction_type != "Manual Adjustment" and target_loc not in STAGING_LOCATIONS:
-            cursor.execute("SELECT DISTINCT item_code FROM current_inventory WHERE location = %s", (target_loc,))
+            cursor.execute(""" SELECT DISTINCT item_code FROM current_inventory WHERE location = %s AND quantity > 0""", (target_loc,))
             items_present = cursor.fetchall()
             if any(existing[0] != item_code for existing in items_present):
                 st.error(f"Location '{target_loc}' already has a different item. Only staging locations can hold multiple item types.")
