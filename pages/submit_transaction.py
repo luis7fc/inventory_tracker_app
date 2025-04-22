@@ -73,12 +73,6 @@ def run():
             scan_val = st.text_input(f"Scan {i+1}", key=f"scan_{i}")
             st.session_state.scan_inputs.append(scan_val)
 
-        if st.button("Clear Scans"):
-            for i in range(expected_scans):
-                st.session_state[f"scan_{i}"] = ""
-            st.session_state.scan_inputs = []
-            st.experimental_rerun()
-
     # Review & Confirm Flow
     if not st.session_state.review_mode:
         if st.button("Review Transaction"):
@@ -86,7 +80,7 @@ def run():
                 st.error("Scan count must match expected scan count based on total quantity and pallet quantity.")
                 st.stop()
             st.session_state.review_mode = True
-            st.experimental_rerun()
+            st.rerun()
 
     else:
         st.subheader("🔎 Review Summary")
@@ -199,15 +193,15 @@ def run():
                 })
 
             conn.commit()
-            st.success("Transaction submitted and recorded.")
+            st.success("Transaction submitted and recorded. 🍻 Cheers, ya did your job well!")
 
             # --- Reset all relevant session state ---
             st.session_state.review_mode = False
             st.session_state.scan_inputs = []
             for i in range(expected_scans):
                 st.session_state[f"scan_{i}"] = ""
-            st.experimental_rerun()
+            st.rerun()
 
         if st.button("Cancel Review"):
             st.session_state.review_mode = False
-            st.experimental_rerun()
+            st.rerun()
