@@ -198,8 +198,6 @@ def run():
             # --- Reset all relevant session state ---
             st.session_state.review_mode = False
             st.session_state.scan_inputs = []
-            for i in range(expected_scans):
-                st.session_state[f"scan_{i}"] = ""
             st.rerun()
 
         if st.button("Cancel Review"):
