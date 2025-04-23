@@ -21,6 +21,9 @@ def run():
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    if "reset_scans" not in st.session_state:
+        st.session_state.reset_scans = False
+
     if "scan_inputs" not in st.session_state:
         st.session_state.scan_inputs = []
     if "review_mode" not in st.session_state:
@@ -70,8 +73,11 @@ def run():
         st.write(f"**Expected Scans:** {expected_scans}")
         st.session_state.scan_inputs = []
         for i in range(expected_scans):
+            if st.session_state.reset_scans:
+                st.session_state[f"scan_{i}"] = ""
             scan_val = st.text_input(f"Scan {i+1}", key=f"scan_{i}")
             st.session_state.scan_inputs.append(scan_val)
+        st.session_state.reset_scans = False
 
     # Review & Confirm Flow
     if not st.session_state.review_mode:
@@ -193,11 +199,21 @@ def run():
                 })
 
             conn.commit()
-            st.success("Transaction submitted and recorded. 🍻 Cheers, ya did your job well!")
+            import random
+            toasts = [
+                "🍻 Cheers, ya did your job well!",
+                "🍀 Now go have a Guinness, champ.",
+                "🛠️ The forklift gods are pleased.",
+                "📦 Another one down. Next!",
+                "💪 That’s how pros do it!",
+                "🧹 You cleaned that up like a janitor with stock options."
+            ]
+            st.success("Transaction submitted and recorded. " + random.choice(toasts))
 
             # --- Reset all relevant session state ---
             st.session_state.review_mode = False
             st.session_state.scan_inputs = []
+            st.session_state.reset_scans = True
             st.rerun()
 
         if st.button("Cancel Review"):
