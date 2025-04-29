@@ -21,9 +21,11 @@ def run():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize session state
+    # Initialize state flags
     if "reset_scans" not in st.session_state:
         st.session_state.reset_scans = False
+    if "reset_lots" not in st.session_state:
+        st.session_state.reset_lots = False
     if "scan_inputs" not in st.session_state:
         st.session_state.scan_inputs = []
     if "review_mode" not in st.session_state:
@@ -52,9 +54,15 @@ def run():
         warehouse = st.text_input(
             "Warehouse Initials (e.g. VV, SAC, FNO)", value="VV", key="warehouse"
         )
+        # Handle reset of lot inputs
+        if st.session_state.reset_lots:
+            for i in range(st.session_state.get("num_lots", 0)):
+                st.session_state.pop(f"lot_{i}", None)
+                st.session_state.pop(f"lot_qty_{i}", None)
+            st.session_state.reset_lots = False
+        # Number of lots and details
         num_lots = st.number_input("Total Lots", min_value=1, step=1, key="num_lots")
-        # Collect lot numbers and quantities
-        for i in range(st.session_state.num_lots):
+        for i in range(num_lots):
             st.text_input(f"Lot {i+1} Number", key=f"lot_{i}")
             st.number_input(
                 f"Quantity for Lot {i+1}", min_value=0, step=1, key=f"lot_qty_{i}"
@@ -62,7 +70,7 @@ def run():
         # Compute total quantity
         total_qty = sum(
             st.session_state.get(f"lot_qty_{i}", 0)
-            for i in range(st.session_state.num_lots)
+            for i in range(num_lots)
         )
         st.write(f"**Total Quantity (sum of lots):** {total_qty}")
         pallet_qty = st.number_input("Pallet Quantity", min_value=1, value=1, step=1)
@@ -94,11 +102,11 @@ def run():
         if st.session_state.reset_scans:
             for i in range(expected_scans):
                 st.session_state[f"scan_{i}"] = ""
+            st.session_state.reset_scans = False
         st.session_state.scan_inputs = []
         for i in range(expected_scans):
             scan_val = st.text_input(f"Scan {i+1}", key=f"scan_{i}")
             st.session_state.scan_inputs.append(scan_val)
-        st.session_state.reset_scans = False
 
     # Review & Confirm Flow
     if not st.session_state.review_mode:
@@ -109,14 +117,12 @@ def run():
                 st.stop()
             # Prepare lot & scan assignments for Job Issue
             if transaction_type == "Job Issue":
-                # Build lot inputs list
                 lot_inputs = []
                 for i in range(st.session_state.num_lots):
                     lot_inputs.append({
                         "lot_number": st.session_state.get(f"lot_{i}"),
                         "qty": st.session_state.get(f"lot_qty_{i}", 0)
                     })
-                # Allocate scans sequentially
                 assignments = []
                 pointer = 0
                 for lot in lot_inputs:
@@ -128,7 +134,6 @@ def run():
                         pointer += 1
                 st.session_state.assignments = assignments
                 st.session_state.lot_inputs = lot_inputs
-
             st.session_state.review_mode = True
             st.rerun()
 
@@ -155,8 +160,7 @@ def run():
         if st.button("Confirm and Submit"):
             signed_qty = total_qty
             bypassed_warning = False
-
-            # Inventory update & admin override for negative
+            # Handle Internal Movement override
             if transaction_type == "Internal Movement":
                 signed_qty = -abs(total_qty)
                 cursor.execute(
@@ -185,17 +189,16 @@ def run():
                 (target_loc, warehouse)
             )
             result = cursor.fetchone()
-            is_multi_item = result and result[0]
+            is_multi_item = bool(result and result[0])
             if transaction_type != "Manual Adjustment" and not is_multi_item:
                 cursor.execute(
                     "SELECT item_code FROM current_inventory WHERE location = %s AND quantity > 0",
-                    (target_loc,)
+                    (target_loc,)    
                 )
-                items_present = [row[0] for row in cursor.fetchall()]
+                items_present = [row[0] for row in cursor.fetchall()]        
                 if items_present and any(existing != item_code for existing in items_present):
                     st.error(
-                        f"Location '{target_loc}' already has a different item with nonzero quantity."
-                        " Only multi-item locations can hold multiple item types."
+                        f"Location '{target_loc}' already has a different item with nonzero quantity. Only multi-item locations can hold multiple item types."
                     )
                     st.stop()
 
@@ -245,7 +248,6 @@ def run():
                                 "transaction_type": transaction_type,
                                 "warehouse": warehouse
                             })
-
             else:
                 # existing logic for other types
                 insert_transaction({
@@ -265,7 +267,7 @@ def run():
                     "warehouse": warehouse
                 })
                 # inventory updates & scan insertions for other types
-                # ... (unchanged from existing code) ...
+                # unchanged from existing code
 
             conn.commit()
             import random
@@ -283,11 +285,7 @@ def run():
             st.session_state.review_mode = False
             st.session_state.scan_inputs = []
             st.session_state.reset_scans = True
-            # reset lots
-            for i in range(st.session_state.num_lots):
-                st.session_state[f"lot_{i}"] = ""
-                st.session_state[f"lot_qty_{i}"] = 0
-            st.session_state.assignments = []
+            st.session_state.reset_lots = True
             st.rerun()
 
         if st.button("Cancel Review"):
