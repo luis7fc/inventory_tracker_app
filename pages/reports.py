@@ -1,5 +1,3 @@
-# pages/reports.py
-
 import streamlit as st
 import pandas as pd
 from db import get_db_connection
@@ -10,7 +8,9 @@ def run():
     conn = get_db_connection()
 
     # 1) build warehouse filter options
-    wh_df = pd.read_sql("SELECT DISTINCT warehouse FROM locations ORDER BY warehouse", conn)
+    wh_df = pd.read_sql(
+        "SELECT DISTINCT warehouse FROM locations ORDER BY warehouse", conn
+    )
     options = ["All"] + wh_df["warehouse"].tolist()
     selection = st.selectbox("🔎 Filter by warehouse", options)
 
@@ -27,10 +27,12 @@ def run():
     """
     if selection != "All":
         base_query += f" WHERE l.warehouse = '{selection}'"
-    base_query += " ORDER BY l.warehouse, l.location, ci.item_code"
+    # ensure correct ORDER BY column names
+    base_query += " ORDER BY l.warehouse, l.location_code, ci.item_code"
 
     df = pd.read_sql(base_query, conn)
 
+    # display full dataframe
     st.dataframe(df, use_container_width=True)
 
     # 3) pivot so each location becomes a column, grouped by warehouse+item
@@ -41,6 +43,7 @@ def run():
         fill_value=0
     ).reset_index()
 
+    # download button for CSV export
     csv_bytes = pivot_df.to_csv(index=False).encode("utf-8")
     st.download_button(
         "📥 Download CSV Report",
