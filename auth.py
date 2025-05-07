@@ -1,24 +1,17 @@
-#Authorization System Set Up
+# auth.py
+
 import bcrypt
 import streamlit as st
-import psycopg2
-
-# --- DB CONNECTION ---
-def get_db_connection():
-    return psycopg2.connect(
-        host=st.secrets["DB_HOST"],
-        database=st.secrets["DB_NAME"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"]
-    )
+from db import get_db_cursor
 
 # --- AUTHENTICATION ---
 def verify_user_credentials(username: str, password: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT password, role FROM users WHERE username = %s", (username,))
-    result = cursor.fetchone()
-    conn.close()
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            "SELECT password, role FROM users WHERE username = %s",
+            (username,)
+        )
+        result = cursor.fetchone()
 
     if result:
         stored_hash, role = result
