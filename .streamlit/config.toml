@@ -6,5 +6,3 @@ secondaryBackgroundColor = "#F2F2F2"   # Light gray panel/card areas
 textColor = "#003366"                  # Deep navy text (Citadel brand)
 font = "sans serif"
 
-[multipage]
-show_navigation = false
