@@ -1,15 +1,5 @@
-#Configuration Structure Script
 import streamlit as st
-import psycopg2
-
-# --- Shared DB Connection ---
-def get_db_connection():
-    return psycopg2.connect(
-        host=st.secrets["DB_HOST"],
-        database=st.secrets["DB_NAME"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"]
-    )
+from db import get_db_cursor
 
 # --- App Metadata ---
 APP_NAME = "Inventory Tracker"
@@ -20,8 +10,8 @@ USER_ROLES = ["admin", "user"]
 
 # --- Warehouses & Locations ---
 DEFAULT_LOCATIONS = ["00", "Test"]
-STAGING_LOCATIONS = ["STAGING", "TRANSFER_STAGING"]
-WAREHOUSES = ["VV", "SAC", "FNO", "Main"]
+STAGING_LOCATIONS = ["RECEIVING_STAGING", "TRANSFER_STAGING"]
+WAREHOUSES = ["VV", "SAC", "FNO", "IE", "VAL"]
 
 # --- Transaction Types ---
 TRANSACTION_TYPES = [
@@ -34,7 +24,8 @@ TRANSACTION_TYPES = [
 
 # --- Inventory Defaults ---
 DEFAULT_PALLET_QUANTITY = 1
-MAX_ITEM_TYPES_IN_STAGING = 10
+MAX_ITEM_TYPES_IN_STAGING = 20
 
-# --- Admin Override (if still using secret key fallback) ---
-ADMIN_OVERRIDE_SECRET_KEY = "admin_override_password"
+# --- Admin Override ---
+# Stored in Streamlit secrets under [general] table
+ADMIN_OVERRIDE_SECRET_KEY = st.secrets["general"]["admin_password"]
