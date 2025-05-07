@@ -1,9 +1,7 @@
-# pages/manage_locations.py
-
 import streamlit as st
 import pandas as pd
-from db import get_db_connection
-from config import STAGING_LOCATIONS
+from db import get_db_cursor, get_all_locations
+
 
 def run():
     st.header("Manage Warehouse Locations")
@@ -18,46 +16,59 @@ def run():
         submit_loc = st.form_submit_button("Save")
 
     if submit_loc and new_loc:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO locations (location_code, description, warehouse, multi_item_allowed)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (location_code) DO UPDATE
-                    SET description = EXCLUDED.description,
-                        warehouse = EXCLUDED.warehouse,
-                        multi_item_allowed = EXCLUDED.multi_item_allowed
-                """, (new_loc, description, warehouse, multi_item_allowed))
-                conn.commit()
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO locations (location_code, description, warehouse, multi_item_allowed)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (location_code) DO UPDATE
+                SET description = EXCLUDED.description,
+                    warehouse = EXCLUDED.warehouse,
+                    multi_item_allowed = EXCLUDED.multi_item_allowed
+                """,
+                (new_loc, description, warehouse, multi_item_allowed)
+            )
         st.success("Location saved.")
 
     # --- Reset or Delete Location ---
     st.subheader("Reset or Delete Location")
-    with get_db_connection() as conn:
-        loc_list = pd.read_sql("SELECT location_code FROM locations ORDER BY location_code", conn)["location_code"]
-        loc_to_clear = st.selectbox("Select Location", loc_list)
+    loc_list = get_all_locations()
+    if loc_list:
+        loc_to_clear = st.selectbox("Select Location", sorted(loc_list))
 
         if st.button("Reset Location Inventory"):
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM current_inventory WHERE location = %s", (loc_to_clear,))
-                conn.commit()
+            with get_db_cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM current_inventory WHERE location = %s",
+                    (loc_to_clear,)
+                )
             st.success(f"Inventory reset for location: {loc_to_clear}")
 
         if st.button("Delete Location"):
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT SUM(quantity) FROM current_inventory WHERE location = %s", (loc_to_clear,))
+            with get_db_cursor() as cursor:
+                cursor.execute(
+                    "SELECT SUM(quantity) FROM current_inventory WHERE location = %s",
+                    (loc_to_clear,)
+                )
                 total_qty = cursor.fetchone()[0]
                 if not total_qty:
-                    cursor.execute("DELETE FROM locations WHERE location_code = %s", (loc_to_clear,))
-                    conn.commit()
+                    cursor.execute(
+                        "DELETE FROM locations WHERE location_code = %s",
+                        (loc_to_clear,)
+                    )
                     st.success(f"Location {loc_to_clear} deleted.")
                 else:
                     st.warning("Cannot delete a location that still has inventory.")
+    else:
+        st.info("No locations found.")
 
     # --- View & Export Locations Table ---
     st.subheader("📋 All Locations (Live)")
-    with get_db_connection() as conn:
-        loc_df = pd.read_sql("SELECT * FROM locations ORDER BY location_code", conn)
+    with get_db_cursor() as cursor:
+        cursor.execute("SELECT * FROM locations ORDER BY location_code")
+        rows = cursor.fetchall()
+        cols = [desc[0] for desc in cursor.description]
+    loc_df = pd.DataFrame(rows, columns=cols)
     st.dataframe(loc_df, use_container_width=True)
 
     # --- Export to CSV ---
