@@ -2,7 +2,7 @@ import streamlit as st
 import re
 from db import get_db_cursor
 
-st.set_page_config(page_title="Pull-tag Upload", layout="wide")
+#st.set_page_config(page_title="Pull-tag Upload", layout="wide")
 st.title("📂 Bulk Pull-tag TXT Upload")
 
 uploaded_files = st.file_uploader(
