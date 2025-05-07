@@ -1,17 +1,18 @@
 import streamlit as st
 import pandas as pd
-from db import get_db_connection
+from db import get_db_cursor
+
 
 def run():
     st.header("📊 Live Inventory Report")
 
-    conn = get_db_connection()
-
     # 1) build warehouse filter options
-    wh_df = pd.read_sql(
-        "SELECT DISTINCT warehouse FROM locations ORDER BY warehouse", conn
-    )
-    options = ["All"] + wh_df["warehouse"].tolist()
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            "SELECT DISTINCT warehouse FROM locations ORDER BY warehouse"
+        )
+        wh_list = [row[0] for row in cursor.fetchall()]
+    options = ["All"] + wh_list
     selection = st.selectbox("🔎 Filter by warehouse", options)
 
     # 2) pull in every location + its warehouse, left-join to current_inventory
@@ -25,12 +26,17 @@ def run():
     LEFT JOIN current_inventory AS ci
       ON ci.location = l.location_code
     """
+    params = []
     if selection != "All":
-        base_query += f" WHERE l.warehouse = '{selection}'"
-    # ensure correct ORDER BY column names
+        base_query += " WHERE l.warehouse = %s"
+        params.append(selection)
     base_query += " ORDER BY l.warehouse, l.location_code, ci.item_code"
 
-    df = pd.read_sql(base_query, conn)
+    with get_db_cursor() as cursor:
+        cursor.execute(base_query, tuple(params))
+        rows = cursor.fetchall()
+        cols = [desc[0] for desc in cursor.description]
+    df = pd.DataFrame(rows, columns=cols)
 
     # display full dataframe
     st.dataframe(df, use_container_width=True)
