@@ -1,25 +1,21 @@
 import streamlit as st
 from datetime import datetime
 from config import STAGING_LOCATIONS
-from db import get_db_connection, insert_transaction, insert_scan_verification
-import psycopg2
+from db import get_db_cursor, insert_transaction, insert_scan_verification
 
 # --- Helper Function ---
 def get_target_location(transaction_type, from_loc, to_loc):
     if transaction_type in ["Receiving", "Return", "Manual Adjustment"]:
         return to_loc
-    elif transaction_type == "Internal Movement":
+    if transaction_type == "Internal Movement":
         return to_loc
-    elif transaction_type == "Job Issue":
+    if transaction_type == "Job Issue":
         return from_loc
     return None
 
 
 def run():
     st.header("🎞️ Submit Inventory Transaction")
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
 
     # Initialize state flags
     if "reset_scans" not in st.session_state:
@@ -51,23 +47,16 @@ def run():
     elif transaction_type == "Job Issue":
         job_number = st.text_input("Job Number", key="job_number")
         from_location = st.text_input("Issue From Location", key="from_location")
-        warehouse = st.text_input(
-            "Warehouse Initials (e.g. VV, SAC, FNO)", value="VV", key="warehouse"
-        )
-        # Handle reset of lot inputs
+        warehouse = st.text_input("Warehouse Initials (e.g. VV, SAC, FNO)", value="VV", key="warehouse")
         if st.session_state.reset_lots:
             for i in range(st.session_state.get("num_lots", 0)):
                 st.session_state.pop(f"lot_{i}", None)
                 st.session_state.pop(f"lot_qty_{i}", None)
             st.session_state.reset_lots = False
-        # Number of lots and details
         num_lots = st.number_input("Total Lots", min_value=1, step=1, key="num_lots")
         for i in range(num_lots):
             st.text_input(f"Lot {i+1} Number", key=f"lot_{i}")
-            st.number_input(
-                f"Quantity for Lot {i+1}", min_value=0, step=1, key=f"lot_qty_{i}"
-            )
-        # Compute total quantity
+            st.number_input(f"Quantity for Lot {i+1}", min_value=0, step=1, key=f"lot_qty_{i}")
         total_qty = sum(
             st.session_state.get(f"lot_qty_{i}", 0)
             for i in range(num_lots)
@@ -76,10 +65,9 @@ def run():
         pallet_qty = st.number_input("Pallet Quantity", min_value=1, value=1, step=1)
     else:
         total_qty = st.number_input("Total Quantity", step=1, key="total_qty")
-        if transaction_type != "Manual Adjustment":
-            pallet_qty = st.number_input(
-                "Pallet Quantity", min_value=1, value=1, step=1, key="pallet_qty"
-            )
+        pallet_qty = st.number_input(
+            "Pallet Quantity", min_value=1, value=1, step=1, key="pallet_qty"
+        )
         if transaction_type in ["Receiving", "Return"]:
             job_number = st.text_input("Job Number", key="job_number")
         if transaction_type == "Receiving":
@@ -111,11 +99,9 @@ def run():
     # Review & Confirm Flow
     if not st.session_state.review_mode:
         if st.button("Review Transaction"):
-            # Scan count validation
             if transaction_type != "Manual Adjustment" and len(st.session_state.scan_inputs) != expected_scans:
                 st.error("Scan count must match expected scan count based on total and pallet qty.")
                 st.stop()
-            # Prepare lot & scan assignments for Job Issue
             if transaction_type == "Job Issue":
                 lot_inputs = []
                 for i in range(st.session_state.num_lots):
@@ -158,67 +144,75 @@ def run():
             st.code("\n".join(st.session_state.scan_inputs))
 
         if st.button("Confirm and Submit"):
-            signed_qty = total_qty
-            bypassed_warning = False
-            # Handle Internal Movement override
-            if transaction_type == "Internal Movement":
-                signed_qty = -abs(total_qty)
-                cursor.execute(
-                    "SELECT quantity FROM current_inventory WHERE item_code = %s AND location = %s",
-                    (item_code, from_location)
-                )
-                result = cursor.fetchone()
-                available = result[0] if result else 0
-                if available < total_qty:
-                    st.warning(f"Only {available} units available in {from_location}. Admin override required.")
-                    admin_pass = st.text_input("Enter admin password to override:", type="password")
-                    if admin_pass != st.secrets["general"]["admin_password"]:
-                        st.error("Incorrect admin password. Transaction blocked.")
-                        st.stop()
-                    bypassed_warning = True
-
-            target_loc = get_target_location(
-                transaction_type,
-                st.session_state.get("from_location", ""),
-                st.session_state.get("to_location", "")
-            )
-
-            # Multi-item location guard
-            cursor.execute(
-                "SELECT multi_item_allowed FROM locations WHERE location_code = %s AND warehouse = %s",
-                (target_loc, warehouse)
-            )
-            result = cursor.fetchone()
-            is_multi_item = bool(result and result[0])
-            if transaction_type != "Manual Adjustment" and not is_multi_item:
-                cursor.execute(
-                    "SELECT item_code FROM current_inventory WHERE location = %s AND quantity > 0",
-                    (target_loc,)    
-                )
-                items_present = [row[0] for row in cursor.fetchall()]        
-                if items_present and any(existing != item_code for existing in items_present):
-                    st.error(
-                        f"Location '{target_loc}' already has a different item with nonzero quantity. Only multi-item locations can hold multiple item types."
+            # Perform inline updates in one transaction
+            with get_db_cursor() as cursor:
+                signed_qty = total_qty
+                bypassed_warning = False
+                # Internal Movement: subtract from source, add to destination
+                if transaction_type == "Internal Movement":
+                    signed_qty = -abs(total_qty)
+                    cursor.execute(
+                        "UPDATE current_inventory SET quantity = quantity - %s WHERE item_code = %s AND location = %s",
+                        (total_qty, item_code, from_location)
                     )
-                    st.stop()
+                    cursor.execute(
+                        "INSERT INTO current_inventory (item_code, location, quantity) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (item_code, location) DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity",
+                        (item_code, to_location, total_qty)
+                    )
+                    cursor.execute(
+                        "SELECT quantity FROM current_inventory WHERE item_code = %s AND location = %s",
+                        (item_code, from_location)
+                    )
+                    result = cursor.fetchone()
+                    available = result[0] if result else 0
+                    if available < 0:
+                        st.warning(f"Inventory negative at {from_location} ({available}). Admin override required.")
+                        admin_pass = st.text_input("Enter admin password to override:", type="password")
+                        if admin_pass != st.secrets["general"]["admin_password"]:
+                            st.error("Incorrect admin password. Transaction blocked.")
+                            st.stop()
+                        bypassed_warning = True
+                # Receiving & Return: add to destination
+                elif transaction_type in ["Receiving", "Return"]:
+                    cursor.execute(
+                        "INSERT INTO current_inventory (item_code, location, quantity) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (item_code, location) DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity",
+                        (item_code, to_location, total_qty)
+                    )
+                # Job Issue: subtract from source
+                elif transaction_type == "Job Issue":
+                    cursor.execute(
+                        "UPDATE current_inventory SET quantity = quantity - %s WHERE item_code = %s AND location = %s",
+                        (total_qty, item_code, from_location)
+                    )
 
-            # Submit for different transaction types
-            if transaction_type == "Job Issue":
-                # Update inventory once
-                cursor.execute(
-                    "UPDATE current_inventory SET quantity = quantity - %s "
-                    "WHERE item_code = %s AND location = %s",
-                    (total_qty, item_code, st.session_state.from_location)
+                # Multi-item location guard
+                target_loc = get_target_location(
+                    transaction_type,
+                    st.session_state.get("from_location", ""),
+                    st.session_state.get("to_location", "")
                 )
                 cursor.execute(
-                    "SELECT quantity FROM current_inventory WHERE item_code = %s AND location = %s",
-                    (item_code, st.session_state.from_location)
+                    "SELECT multi_item_allowed FROM locations WHERE location_code = %s AND warehouse = %s",
+                    (target_loc, warehouse)
                 )
                 result = cursor.fetchone()
-                remaining = result[0] if result else 0
-                if remaining < 0:
-                    st.warning(f"Warning: Inventory at {st.session_state.from_location} is now negative ({remaining}). Please investigate.")
-                # Insert one transaction per lot + associated scans
+                is_multi_item = bool(result and result[0])
+                if transaction_type != "Manual Adjustment" and not is_multi_item:
+                    cursor.execute(
+                        "SELECT item_code FROM current_inventory WHERE location = %s AND quantity > 0",
+                        (target_loc,)
+                    )
+                    items_present = [row[0] for row in cursor.fetchall()]
+                    if items_present and any(existing != item_code for existing in items_present):
+                        st.error(
+                            f"Location '{target_loc}' already has a different item with nonzero quantity. Only multi-item locations can hold multiple item types."
+                        )
+                        st.stop()
+
+            # Insert transactions and scans via helper functions
+            if transaction_type == "Job Issue":
                 for lot in st.session_state.lot_inputs:
                     insert_transaction({
                         "transaction_type": transaction_type,
@@ -236,7 +230,6 @@ def run():
                         "note": note,
                         "warehouse": warehouse
                     })
-                    # Insert scans for this lot
                     for assign in st.session_state.assignments:
                         if assign["lot_number"] == lot["lot_number"]:
                             insert_scan_verification({
@@ -249,7 +242,6 @@ def run():
                                 "warehouse": warehouse
                             })
             else:
-                # existing logic for other types
                 insert_transaction({
                     "transaction_type": transaction_type,
                     "item_code": item_code,
@@ -266,21 +258,19 @@ def run():
                     "note": note,
                     "warehouse": warehouse
                 })
-                # inventory updates & scan insertions for other types
-                # unchanged from existing code
+                if transaction_type != "Manual Adjustment":
+                    for scan in st.session_state.scan_inputs:
+                        insert_scan_verification({
+                            "item_code": item_code,
+                            "job_number": st.session_state.get("job_number", ""),
+                            "lot_number": st.session_state.get("lot_number", ""),
+                            "scan_id": scan,
+                            "location": target_loc,
+                            "transaction_type": transaction_type,
+                            "warehouse": warehouse
+                        })
 
-            conn.commit()
-            import random
-            toasts = [
-                "🍻 Cheers, ya did your job well!",
-                "🍀 Now go have a Guinness, champ.",
-                "🛠️ The forklift gods are pleased.",
-                "📦 Another one down. Next!",
-                "💪 That’s how pros do it!",
-                "🧹 You cleaned that up like a janitor with stock options."
-            ]
-            st.success("Transaction submitted and recorded. " + random.choice(toasts))
-
+            st.success("Transaction submitted and recorded. 🍀")
             # Reset state
             st.session_state.review_mode = False
             st.session_state.scan_inputs = []
