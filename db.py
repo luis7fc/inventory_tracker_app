@@ -3,6 +3,7 @@
 import streamlit as st
 import psycopg2
 import bcrypt
+from contextlib import contextmanager
 
 
 @st.cache_resource
@@ -270,3 +271,30 @@ def insert_inventory_init_row(conn, item_code, location, quantity):
             VALUES (%s, %s, %s)
         """, (item_code, location, quantity))
         conn.commit()
+
+#Context Manager
+# db.py
+
+import streamlit as st
+import psycopg2
+from contextlib import contextmanager
+
+@contextmanager
+def get_db_cursor():
+    """Yields a fresh cursor and commits+closes when done."""
+    conn = psycopg2.connect(
+        host=st.secrets["DB_HOST"],
+        dbname=st.secrets["DB_NAME"],
+        user=st.secrets["DB_USER"],
+        password=st.secrets["DB_PASSWORD"],
+        port=st.secrets["DB_PORT"],
+    )
+    try:
+        cursor = conn.cursor()
+        yield cursor
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
