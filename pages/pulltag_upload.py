@@ -1,0 +1,57 @@
+import streamlit as st
+import pandas as pd
+from io import StringIO
+import re
+from datetime import datetime
+from db import get_db_connection
+import psycopg2
+
+st.set_page_config(page_title="Pull-tag Upload", layout="wide")
+st.title("📂 Bulk Pull-tag TXT Upload")
+
+conn = get_db_connection()
+cursor = conn.cursor()
+
+uploaded_files = st.file_uploader(
+    "Upload Pull-tag TXT Files", accept_multiple_files=True, type=['txt']
+)
+
+def parse_and_insert(txt_file):
+    lines = txt_file.read().decode("utf-8").splitlines()
+    insert_count = 0
+    for line in lines:
+        if line.startswith("IL"):
+            parts = line.split(",")
+            item_code = parts[2].strip()
+            cost_code = parts[11].strip()
+            description = parts[5].replace('"', '').strip()
+            quantity = int(parts[3])
+            job_number = parts[9].strip()
+            lot_number = parts[10].strip()
+            
+            scan_required = item_code == cost_code
+
+            # Insert into pulltags table
+            cursor.execute("""
+                INSERT INTO pulltags 
+                (job_number, lot_number, item_code, cost_code, description, quantity, scan_required, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
+                ON CONFLICT DO NOTHING;
+            """, (job_number, lot_number, item_code, cost_code, description, quantity, scan_required))
+            
+            insert_count += 1
+    conn.commit()
+    return insert_count
+
+if st.button("Upload & Parse Files"):
+    if uploaded_files:
+        total_inserted = 0
+        for txt_file in uploaded_files:
+            count = parse_and_insert(txt_file)
+            total_inserted += count
+        st.success(f"Successfully uploaded and inserted {total_inserted} items into the database! 🎉")
+    else:
+        st.warning("Please upload at least one .txt file.")
+
+cursor.close()
+conn.close()
