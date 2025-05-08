@@ -56,5 +56,4 @@ def run():
                 total_inserted += parse_and_insert(txt_file)
             st.success(f"Successfully uploaded and inserted {total_inserted} items into the database! 🎉")
 
-# Streamlit multipage entrypoint
-run()
+
