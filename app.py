@@ -13,8 +13,8 @@ import pages.scan_lookup         as scan_lookup
 
 # Import new pages
 import pages.pulltag_upload      as pulltag_upload
-import pages.job_kitting         as job_kitting
-import pages.admin_bulk_export   as admin_bulk_export
+#import pages.job_kitting         as job_kitting
+#import pages.admin_bulk_export   as admin_bulk_export
 
 # --- Run Login ---
 login()
@@ -31,14 +31,14 @@ base_pages = [
 # Admin‐only pages
 admin_pages = [
     "Pull-tag Upload",
-    "Bulk Export",
+    #"Bulk Export",
     "Upload Init CSV",
 ]
 
 # Warehouse (or any role) page
-kitting_pages = [
-    "Job Kitting",
-]
+#kitting_pages = [
+#    "Job Kitting",
+#]
 
 pages = []
 pages.append("Submit Transaction")
@@ -48,7 +48,7 @@ if st.session_state.role == "admin":
     pages += admin_pages
 
 # Everyone (or you can restrict by another role) gets Job Kitting
-pages += kitting_pages
+#pages += kitting_pages
 
 # Then the rest
 pages += [
@@ -67,11 +67,11 @@ if selected_tab == "Submit Transaction":
 elif selected_tab == "Pull-tag Upload":
     pulltag_upload.run()
 
-elif selected_tab == "Job Kitting":
-    job_kitting.run()
+#elif selected_tab == "Job Kitting":
+#    job_kitting.run()
 
-elif selected_tab == "Bulk Export":
-    admin_bulk_export.run()
+#elif selected_tab == "Bulk Export":
+#    admin_bulk_export.run()
 
 elif selected_tab == "Upload Init CSV":
     upload_init_csv.run()
