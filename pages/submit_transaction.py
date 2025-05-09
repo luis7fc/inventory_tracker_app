@@ -323,10 +323,14 @@ def run():
         if transaction_type in ["Receiving", "Internal Movement", "Return"]:
             for scan_id in st.session_state.scan_inputs:
                 update_scan_location(
-    cursor, scan_id, item_code, to_location,
-    transaction_type=transaction_type, job_number=job_number
-)
+                    cursor,
+                    scan_id,
+                    item_code,
+                    to_location,
+                    transaction_type=transaction_type,
+                    job_number=job_number
+                )
         elif transaction_type == "Job Issue":
             for scan_id in st.session_state.scan_inputs:
                 delete_scan_location(cursor, scan_id)
-                )
+
