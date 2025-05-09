@@ -1,8 +1,8 @@
 import streamlit as st
+st.set_page_config(page_title="Bulk Pull-tag TXT Upload", layout="wide")
 from db import get_db_cursor
 
-st.set_page_config(page_title="Bulk Pull-tag TXT Upload", layout="wide")
-st.title("📂 Bulk Pull-tag TXT Upload")
+st.title("📂 Pull-tag TXT Upload")
 
 # File uploader for multiple .txt files
 uploaded_files = st.file_uploader(
