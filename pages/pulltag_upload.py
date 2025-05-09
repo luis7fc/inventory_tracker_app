@@ -1,5 +1,4 @@
 import streamlit as st
-st.set_page_config(page_title="Bulk Pull-tag TXT Upload", layout="wide")
 from db import get_db_cursor
 
 st.title("📂 Pull-tag TXT Upload")
