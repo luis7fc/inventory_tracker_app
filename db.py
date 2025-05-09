@@ -153,6 +153,8 @@ def update_scan_location(cursor, scan_id, item_code, location, transaction_type=
         location = f"ISSUED-{job_number}"
     cursor.execute(
         """
+    cursor.execute(
+        """
         INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
         VALUES (%s, %s, %s, now())
         ON CONFLICT (scan_id) DO UPDATE SET location = EXCLUDED.location, updated_at = now()
