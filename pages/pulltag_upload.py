@@ -62,7 +62,8 @@ def parse_and_insert(txt_file):
     return insert_count
 
 
-# Upload & parse action\if st.button("Upload & Parse Files"):
+# Upload & parse action
+if st.button("Upload & Parse Files"):
     if not uploaded_files:
         st.warning("Please upload at least one .txt file.")
     else:
