@@ -151,7 +151,8 @@ def validate_scan_for_transaction(cursor, scan_id, item_code, transaction_type, 
 def update_scan_location(cursor, scan_id, item_code, location, transaction_type=None, job_number=None):
     if transaction_type in ["Job Issue", "Kitting"] and job_number:
         location = f"ISSUED-{job_number}"
-    
+    cursor.execute(
+        """
         INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
         VALUES (%s, %s, %s, now())
         ON CONFLICT (scan_id) DO UPDATE SET location = EXCLUDED.location, updated_at = now()
