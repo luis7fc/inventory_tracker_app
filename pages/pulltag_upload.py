@@ -10,10 +10,12 @@ def parse_and_insert(txt_file):
     into the pulltags table with columns:
       warehouse, item_code, quantity, uom, description,
       job_number, lot_number, cost_code
-    Properly handles embedded double-quotes in descriptions.
+    Properly handles embedded double-quotes and non-UTF-8 bytes in descriptions.
     Returns the number of inserted rows.
     """
-    text = txt_file.read().decode("utf-8")
+    # Decode with replacement for non-UTF-8 bytes
+    raw = txt_file.read()
+    text = raw.decode("utf-8", errors="replace")
     reader = csv.reader(
         StringIO(text), delimiter=',', quotechar='"', doublequote=True
     )
@@ -21,9 +23,13 @@ def parse_and_insert(txt_file):
 
     with get_db_cursor() as cursor:
         for row in reader:
+            # Only process IL lines
             if not row or row[0] != "IL":
                 continue
+            # Ensure at least 15 columns to avoid index errors
             row += [""] * 15
+
+            # Map fields by position
             warehouse   = row[1]
             item_code   = row[2]
             qty_str     = row[3]
@@ -32,14 +38,21 @@ def parse_and_insert(txt_file):
             job_number  = row[9]
             lot_number  = row[10]
             cost_code   = row[11]
+
+            # Clean up description quotes
             if description:
+                # Replace escaped quotes
                 description = description.replace('""', '"').strip('"').strip()
+
+            # Validate quantity
             try:
                 quantity = int(qty_str)
-            except ValueError:
+            except (ValueError, TypeError):
                 continue
             if quantity <= 0:
                 continue
+
+            # Insert into pulltags
             cursor.execute(
                 """
                 INSERT INTO pulltags
