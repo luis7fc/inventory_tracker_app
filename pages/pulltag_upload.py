@@ -25,7 +25,7 @@ def run():
                 if not row or row[0] != 'IL':
                     continue
                 # Map columns by index
-                location    = row[1]
+                warehouse    = row[1]
                 item_code   = row[2]
                 # Quantity conversion
                 try:
@@ -43,13 +43,13 @@ def run():
 
                 # Insert into pulltags table
                 cursor.execute(
-                    "INSERT INTO pulltags (location, item_code, quantity, uom, description, job_number, lot_number, cost_code) "
+                    "INSERT INTO pulltags (warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (location, item_code, quantity, uom, description, job_number, lot_number, cost_code)
                 )
                 inserted += 1
                 parsed_rows.append({
-                    'warehouse': location,
+                    'warehouse': warehouse,
                     'item_code': item_code,
                     'quantity': quantity,
                     'uom': uom,
