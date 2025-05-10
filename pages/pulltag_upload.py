@@ -45,7 +45,7 @@ def run():
                 cursor.execute(
                     "INSERT INTO pulltags (warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (location, item_code, quantity, uom, description, job_number, lot_number, cost_code)
+                    (warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code)
                 )
                 inserted += 1
                 parsed_rows.append({
