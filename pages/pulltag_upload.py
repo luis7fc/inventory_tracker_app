@@ -49,7 +49,7 @@ def run():
                 )
                 inserted += 1
                 parsed_rows.append({
-                    'location': location,
+                    'warehouse': location,
                     'item_code': item_code,
                     'quantity': quantity,
                     'uom': uom,
