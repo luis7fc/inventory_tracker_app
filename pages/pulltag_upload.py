@@ -1,54 +1,82 @@
 import streamlit as st
-import csv
 import pandas as pd
 from io import StringIO
 from db import get_db_cursor
 
+# Manual parsing based on fixed field positions, handling embedded commas and quotes
 
-def parse_and_insert(txt_file):
+def parse_to_records(txt_file):
     """
-    Insert parsed pull-tag IL rows from txt_file into the pulltags table.
-    Returns the number of inserted rows.
+    Parse a TXT file and return a list of dicts for each valid IL row without inserting.
+    Fields: warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code
     """
     raw = txt_file.read()
     text = raw.decode("utf-8", errors="replace")
-    reader = csv.reader(
-        StringIO(text), delimiter=',', quotechar='"', doublequote=True
-    )
+    records = []
+
+    for line in text.splitlines():
+        # Only process lines that start with IL,
+        if not line.startswith("IL,"):
+            continue
+        cols = line.split(",")
+        # We expect at least 11 columns (before considering embedded commas in description)
+        if len(cols) < 11:
+            continue
+
+        # Fixed trailing fields count: conversion_factor, equipment_id, equipment_cost_code,
+        # job_number, lot_number, cost_code, category, requisition_number, issue_date
+        TRAILING = 9
+        L = len(cols)
+
+        # Extract description from cols[5] up to cols[L-TRAILING-1]
+        desc_parts = cols[5: L - TRAILING]
+        description = ",".join(desc_parts).strip()
+        # Remove outer quotes if double-quoted
+        if description.startswith('"') and description.endswith('"'):
+            description = description[1:-1]
+        # Strip any whitespace
+        description = description.strip()
+
+        # Map other fields
+        warehouse  = cols[1].strip()
+        item_code  = cols[2].strip()
+        qty_str    = cols[3].strip()
+        uom        = cols[4].strip()
+        job_number = cols[-6].strip()
+        lot_number = cols[-5].strip()
+        cost_code  = cols[-4].strip()
+
+        # Validate quantity
+        try:
+            quantity = int(qty_str)
+        except ValueError:
+            continue
+        if quantity <= 0:
+            continue
+
+        records.append({
+            "warehouse": warehouse,
+            "item_code": item_code,
+            "quantity": quantity,
+            "uom": uom,
+            "description": description,
+            "job_number": job_number,
+            "lot_number": lot_number,
+            "cost_code": cost_code
+        })
+    # Reset file pointer for potential reuse
+    txt_file.seek(0)
+    return records
+
+
+def parse_and_insert(txt_file):
+    """
+    Insert parsed IL rows from txt_file into the pulltags table.
+    """
+    records = parse_to_records(txt_file)
     insert_count = 0
-
     with get_db_cursor() as cursor:
-        for row in reader:
-            if not row or row[0] != "IL":
-                continue
-            row += [""] * 15
-            warehouse   = row[1]
-            item_code   = row[2]
-            qty_str     = row[3]
-            uom         = row[4]
-            description = row[5]
-            job_number  = row[9]
-            lot_number  = row[10]
-            cost_code   = row[11]
-
-            # Enhanced description cleanup
-            if description:
-                # Remove double outer quotes if present
-                if description.startswith('""') and description.endswith('""'):
-                    description = description[2:-2]
-                # Replace any remaining double double-quotes with single quote
-                description = description.replace('""', '"')
-                # Strip single leading/trailing quotes and whitespace
-                description = description.strip('"').strip()
-
-            # Validate quantity
-            try:
-                quantity = int(qty_str)
-            except (ValueError, TypeError):
-                continue
-            if quantity <= 0:
-                continue
-
+        for rec in records:
             cursor.execute(
                 """
                 INSERT INTO pulltags
@@ -56,50 +84,14 @@ def parse_and_insert(txt_file):
                    job_number, lot_number, cost_code)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                (warehouse, item_code, quantity,
-                 uom, description, job_number, lot_number, cost_code)
+                (
+                    rec['warehouse'], rec['item_code'], rec['quantity'],
+                    rec['uom'], rec['description'], rec['job_number'],
+                    rec['lot_number'], rec['cost_code']
+                )
             )
             insert_count += 1
     return insert_count
-
-
-def parse_to_records(txt_file):
-    """
-    Parse txt_file and return list of dicts for IL rows without inserting.
-    """
-    records = []
-    raw = txt_file.read()
-    text = raw.decode("utf-8", errors="replace")
-    reader = csv.reader(
-        StringIO(text), delimiter=',', quotechar='"', doublequote=True
-    )
-    for row in reader:
-        if not row or row[0] != "IL":
-            continue
-        row += [""] * 15
-        try:
-            quantity = int(row[3])
-        except (ValueError, TypeError):
-            continue
-        if quantity <= 0:
-            continue
-        description = row[5]
-        if description:
-            if description.startswith('""') and description.endswith('""'):
-                description = description[2:-2]
-            description = description.replace('""', '"').strip('"').strip()
-        records.append({
-            "warehouse": row[1],
-            "item_code": row[2],
-            "quantity": quantity,
-            "uom": row[4],
-            "description": description,
-            "job_number": row[9],
-            "lot_number": row[10],
-            "cost_code": row[11]
-        })
-    txt_file.seek(0)
-    return records
 
 
 def run():
@@ -113,31 +105,32 @@ def run():
         accept_multiple_files=True,
         type=["txt"]
     )
-
     if not uploaded_files:
         return
 
+    # Only consider new files
     new_files = [f for f in uploaded_files if f.name not in st.session_state.processed_files]
     if not new_files:
         st.info("No new files to preview; all uploaded files have been processed.")
         return
 
+    # Preview parsed data
     all_records = []
-    for txt_file in new_files:
-        records = parse_to_records(txt_file)
-        all_records.extend(records)
-    if all_records:
-        df = pd.DataFrame(all_records)
-        st.subheader("Preview Parsed Pull-tag Rows")
-        st.dataframe(df)
-    else:
+    for f in new_files:
+        all_records.extend(parse_to_records(f))
+    if not all_records:
         st.warning("No valid IL rows found in selected files.")
         return
 
+    df = pd.DataFrame(all_records)
+    st.subheader("Preview Parsed Pull-tag Rows")
+    st.dataframe(df)
+
+    # Commit button
     if st.button("Commit Parsed Pull-tags to DB"):
         total_inserted = 0
-        for txt_file in new_files:
-            total_inserted += parse_and_insert(txt_file)
-            st.session_state.processed_files.add(txt_file.name)
+        for f in new_files:
+            total_inserted += parse_and_insert(f)
+            st.session_state.processed_files.add(f.name)
         st.success(f"✅ Inserted {total_inserted} rows into pulltags")
         st.info("Done processing and committing pull-tag files.")
