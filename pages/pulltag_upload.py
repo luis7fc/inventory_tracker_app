@@ -30,14 +30,25 @@ def parse_and_insert(txt_file):
             job_number  = row[9]
             lot_number  = row[10]
             cost_code   = row[11]
+
+            # Enhanced description cleanup
             if description:
-                description = description.replace('""', '"').strip('"').strip()
+                # Remove double outer quotes if present
+                if description.startswith('""') and description.endswith('""'):
+                    description = description[2:-2]
+                # Replace any remaining double double-quotes with single quote
+                description = description.replace('""', '"')
+                # Strip single leading/trailing quotes and whitespace
+                description = description.strip('"').strip()
+
+            # Validate quantity
             try:
                 quantity = int(qty_str)
             except (ValueError, TypeError):
                 continue
             if quantity <= 0:
                 continue
+
             cursor.execute(
                 """
                 INSERT INTO pulltags
@@ -74,6 +85,8 @@ def parse_to_records(txt_file):
             continue
         description = row[5]
         if description:
+            if description.startswith('""') and description.endswith('""'):
+                description = description[2:-2]
             description = description.replace('""', '"').strip('"').strip()
         records.append({
             "warehouse": row[1],
@@ -85,7 +98,6 @@ def parse_to_records(txt_file):
             "lot_number": row[10],
             "cost_code": row[11]
         })
-    # reset cursor to start for possible insert later
     txt_file.seek(0)
     return records
 
@@ -105,13 +117,11 @@ def run():
     if not uploaded_files:
         return
 
-    # Identify new files not yet processed
     new_files = [f for f in uploaded_files if f.name not in st.session_state.processed_files]
     if not new_files:
         st.info("No new files to preview; all uploaded files have been processed.")
         return
 
-    # Preview parsed data for new files
     all_records = []
     for txt_file in new_files:
         records = parse_to_records(txt_file)
@@ -124,7 +134,6 @@ def run():
         st.warning("No valid IL rows found in selected files.")
         return
 
-    # Commit button
     if st.button("Commit Parsed Pull-tags to DB"):
         total_inserted = 0
         for txt_file in new_files:
