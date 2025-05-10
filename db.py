@@ -24,20 +24,41 @@ def get_db_cursor():
 
 # --- Location Utilities ---
 def get_all_locations():
+    """Return all location codes."""
     with get_db_cursor() as cursor:
         cursor.execute("SELECT location_code FROM locations")
-        return [row[0] for row in cursor.fetchall()]
+        return [r[0] for r in cursor.fetchall()]
 
 def validate_location_exists(location_code):
+    """Check if a location exists."""
     with get_db_cursor() as cursor:
-        cursor.execute(
-            "SELECT 1 FROM locations WHERE location_code = %s",
-            (location_code,)
-        )
+        cursor.execute("SELECT 1 FROM locations WHERE location_code = %s", (location_code,))
         return cursor.fetchone() is not None
+
+# --- Inventory Initialization ---
+def clear_current_inventory():
+    """Delete all rows in current_inventory."""
+    with get_db_cursor() as cursor:
+        cursor.execute("DELETE FROM current_inventory")
+
+def bulk_insert_inventory(rows):
+    """Insert or update multiple inventory rows.
+    rows: iterable of (item_code, location, quantity)
+    """
+    with get_db_cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO current_inventory (item_code, location, quantity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (item_code, location) DO UPDATE
+            SET quantity = current_inventory.quantity + EXCLUDED.quantity
+            """,
+            rows
+        )
 
 # --- Inventory Transactions ---
 def insert_transaction(transaction_data):
+    """Insert a new transaction record."""
     with get_db_cursor() as cursor:
         cursor.execute(
             """
@@ -55,9 +76,9 @@ def insert_transaction(transaction_data):
                     %s, %s, %s, %s)
             """,
             (
-                transaction_data["transaction_type"],
-                transaction_data["item_code"],
-                transaction_data["quantity"],
+                transaction_data.get("transaction_type"),
+                transaction_data.get("item_code"),
+                transaction_data.get("quantity"),
                 transaction_data.get("job_number"),
                 transaction_data.get("lot_number"),
                 transaction_data.get("po_number"),
@@ -65,15 +86,16 @@ def insert_transaction(transaction_data):
                 transaction_data.get("to_location"),
                 transaction_data.get("from_warehouse"),
                 transaction_data.get("to_warehouse"),
-                transaction_data["user_id"],
+                transaction_data.get("user_id"),
                 transaction_data.get("bypassed_warning", False),
                 transaction_data.get("note", ""),
-                transaction_data["warehouse"]
+                transaction_data.get("warehouse")
             )
         )
 
 # --- Scan Verifications ---
 def insert_scan_verification(scan_data):
+    """Insert a scan verification record."""
     with get_db_cursor() as cursor:
         cursor.execute(
             """
@@ -85,29 +107,34 @@ def insert_scan_verification(scan_data):
             VALUES (%s, %s, %s, NOW(), %s, %s, %s, %s)
             """,
             (
-                scan_data["item_code"],
+                scan_data.get("item_code"),
                 scan_data.get("job_number"),
                 scan_data.get("lot_number"),
-                scan_data["scan_id"],
-                scan_data["location"],
-                scan_data["transaction_type"],
-                scan_data["warehouse"]
+                scan_data.get("scan_id"),
+                scan_data.get("location"),
+                scan_data.get("transaction_type"),
+                scan_data.get("warehouse")
             )
         )
 
 # --- Scan Location Logic ---
-def validate_scan_for_transaction(cursor, scan_id, item_code, transaction_type, from_location=None, to_location=None, job_number=None):
+def validate_scan_for_transaction(cursor, scan_id, item_code, transaction_type,
+                                   from_location=None, to_location=None, job_number=None):
+    """
+    Ensure a scan_id is valid for a given transaction type.
+    Raises ValueError on invalid.
+    """
     if transaction_type in ["Internal Movement", "Job Issue", "Kitting"] and job_number:
         cursor.execute("SELECT location FROM current_scan_location WHERE scan_id = %s", (scan_id,))
         if cursor.fetchone():
-            raise ValueError(f"Scan ID {scan_id} already exists and was already issued or in use.")
+            raise ValueError(f"Scan ID {scan_id} already exists and is in use.")
         return
     if transaction_type == "Receiving":
         cursor.execute("SELECT 1 FROM current_scan_location WHERE scan_id = %s", (scan_id,))
         if cursor.fetchone():
             raise ValueError(f"Scan ID {scan_id} already exists in the system.")
         return
-    # Other transactions: scan must exist and be in correct location
+    # Other transactions: must exist and be at expected location
     cursor.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
     result = cursor.fetchone()
     if not result:
@@ -122,27 +149,66 @@ def validate_scan_for_transaction(cursor, scan_id, item_code, transaction_type, 
 
 
 def update_scan_location(cursor, scan_id, item_code, location, transaction_type=None, job_number=None):
+    """
+    Insert or update current_scan_location for a scan.
+    """
     if transaction_type in ["Job Issue", "Kitting"] and job_number:
-        location = f"ISSUED-{job_number}"
+        location_marker = f"ISSUED-{job_number}"
+    else:
+        location_marker = location
     cursor.execute(
         """
         INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
-        VALUES (%s, %s, %s, now())
-        ON CONFLICT (scan_id) DO UPDATE SET location = EXCLUDED.location, updated_at = now()
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (scan_id) DO UPDATE
+        SET location = EXCLUDED.location, updated_at = NOW()
         """,
-        (scan_id, item_code, location)
+        (scan_id, item_code, location_marker)
     )
-
 def delete_scan_location(cursor, scan_id):
+    """Remove a scan_id from current_scan_location."""
     cursor.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (scan_id,))
 
-# --- Pull-tags Helper Functions ---
+# --- User Management ---
+def create_user(username, plain_password, role):
+    """Insert a new user with hashed password."""
+    hashed_pw = bcrypt.hashpw(plain_password.encode(), bcrypt.gensalt()).decode()
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
+            (username, hashed_pw, role)
+        )
 
+def update_user_role(user_id, new_role):
+    """Update an existing user's role."""
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            "UPDATE users SET role = %s WHERE id = %s",
+            (new_role, user_id)
+        )
+
+def update_user_password(user_id, hashed_pw):
+    """Update an existing user's password (expects hashed)."""
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            "UPDATE users SET password = %s WHERE id = %s",
+            (hashed_pw, user_id)
+        )
+
+def delete_user(user_id):
+    """Delete a user by ID."""
+    with get_db_cursor() as cursor:
+        cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+def get_all_users():
+    """Return list of (id, username, role)."""
+    with get_db_cursor() as cursor:
+        cursor.execute("SELECT id, username, role FROM users")
+        return cursor.fetchall()
+
+# --- Pull-tags Helper Functions ---
 def get_pulltag_rows(job_number, lot_number):
-    """
-    Fetch pulltag rows for a given job/lot.
-    Returns list of dicts: warehouse, item_code, description, qty_req, uom, cost_code, status
-    """
+    """Fetch pulltags for a given job and lot."""
     query = (
         "SELECT warehouse, item_code, description, quantity AS qty_req, uom, cost_code, status "
         "FROM pulltags WHERE job_number = %s AND lot_number = %s"
@@ -174,7 +240,7 @@ def submit_kitting(kits):
             if kq > 0:
                 cur.execute(
                     "UPDATE pulltags SET quantity = %s, status = 'complete' "
-                    "WHERE job_number = %s AND lot_number = %s AND item_code = %s",  
+                    "WHERE job_number = %s AND lot_number = %s AND item_code = %s",
                     (kq, job, lot, item_code)
                 )
             elif kq < 0:
@@ -191,10 +257,8 @@ def submit_kitting(kits):
 
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, source_location):
     """
-    Process scans: insert into transactions, scan_verifications, inventory +/-,
-    update current_scan_location for returns.
-    scans_needed: dict[item_code -> {(job,lot): qty}]
-    scan_inputs: dict[scan_key -> scan_id]
+    Process scans for issues/returns:
+    - Insert transactions, scan_verifications, inventory +/-, update scan_location.
     """
     with get_db_cursor() as cur:
         for item_code, lots in scans_needed.items():
@@ -203,22 +267,18 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, source_location):
                 assign = min(need, total_needed)
                 if assign == 0:
                     continue
-                # determine type and qty
                 trans_type = 'Job Issue' if assign > 0 else 'Return'
                 qty = assign if assign > 0 else abs(assign)
-                # fetch warehouse for record
+                # fetch warehouse
                 cur.execute(
-                    "SELECT warehouse FROM pulltags "
-                    "WHERE job_number = %s AND lot_number = %s AND item_code = %s LIMIT 1",  
+                    "SELECT warehouse FROM pulltags WHERE job_number = %s AND lot_number = %s AND item_code = %s LIMIT 1",
                     (job, lot, item_code)
                 )
                 wh = cur.fetchone()
                 warehouse = wh[0] if wh else None
-                # 1) transaction record
+                # 1) transaction
                 cur.execute(
-                    "INSERT INTO transactions "
-                    "(transaction_type,warehouse,source_location,job_number,lot_number,item_code,quantity) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO transactions (transaction_type,warehouse,source_location,job_number,lot_number,item_code,quantity) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (trans_type, warehouse, source_location, job, lot, item_code, qty)
                 )
                 # 2) scans
@@ -228,30 +288,21 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, source_location):
                     if cur.fetchone()[0] > 0:
                         raise Exception(f"Scan {sid} already used; return required before reuse.")
                     cur.execute(
-                        "INSERT INTO scan_verifications "
-                        "(item_code,scan_id,job_number,lot_number,warehouse,transaction_type) "
-                        "VALUES (%s,%s,%s,%s,%s,%s)",
+                        "INSERT INTO scan_verifications (item_code,scan_id,job_number,lot_number,warehouse,transaction_type) VALUES (%s,%s,%s,%s,%s,%s)",
                         (item_code, sid, job, lot, warehouse, trans_type)
                     )
                     if trans_type == 'Return':
                         cur.execute(
-                            "INSERT INTO current_scan_location (scan_id, item_code, location) "
-                            "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                            "INSERT INTO current_scan_location (scan_id, item_code, location) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
                             (sid, item_code, source_location)
                         )
                 # 3) inventory update
                 if trans_type == 'Job Issue':
-                    cur.execute(
-                        "UPDATE current_inventory SET quantity = quantity - %s "
-                        "WHERE item_code = %s AND location = %s",
-                        (qty, item_code, source_location)
-                    )
+                    cur.execute("UPDATE current_inventory SET quantity = quantity - %s WHERE item_code = %s AND location = %s",
+                                 (qty, item_code, source_location))
                 else:
-                    cur.execute(
-                        "UPDATE current_inventory SET quantity = quantity + %s "
-                        "WHERE item_code = %s AND location = %s",
-                        (qty, item_code, source_location)
-                    )
+                    cur.execute("UPDATE current_inventory SET quantity = quantity + %s WHERE item_code = %s AND location = %s",
+                                 (qty, item_code, source_location))
                 total_needed -= need
                 if total_needed <= 0:
                     break
