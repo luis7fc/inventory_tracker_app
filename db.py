@@ -298,13 +298,14 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 sql = f"""
                     INSERT INTO transactions
                         (transaction_type,
+                         date,
                          warehouse,
                          {loc_field},
                          job_number,
                          lot_number,
                          item_code,
                          quantity)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s)
                 """
                 cur.execute(sql,
                     (trans_type,
