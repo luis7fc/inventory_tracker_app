@@ -255,7 +255,7 @@ def submit_kitting(kits):
                     (job, lot, item_code)
                 )
 
-def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None):
+def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None, scanned_by=None):
     """
     Process scans for Job Issues, Returns, and (if needed) Internal Movements:
     - Insert into transactions (with dynamic from/to location)
@@ -293,6 +293,8 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 )
                 wh = cur.fetchone()
                 warehouse = wh[0] if wh else None
+                sb = st.session_state.user
+                sb = scanned_by
 
                 # 3) Insert into transactions with dynamic location column
                 sql = f"""
@@ -304,8 +306,9 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                          job_number,
                          lot_number,
                          item_code,
-                         quantity)
-                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s)
+                         quantity,
+                         user_id)
+                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %$)
                 """
                 cur.execute(sql,
                     (trans_type,
@@ -314,12 +317,15 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                      job,
                      lot,
                      item_code,
-                     qty)
+                     qty,
+                     sb)
                 )
 
                 # 4) Insert each scan into scan_verifications (and current_scan_location for Returns)
                 for idx in range(1, qty + 1):
                     sid = scan_inputs.get(f"scan_{item_code}_{idx}")
+                    sb = st.session_state.user
+                    sb = scanned_by
                     # prevent reuse
                     cur.execute(
                         "SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s",
@@ -339,8 +345,9 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                            scan_time,
                            location,
                            transaction_type,
-                           warehouse)
-                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s)
+                           warehouse,
+                           scanned_by)
+                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s,%s)
                         """,
                         (
                           item_code,
@@ -349,7 +356,8 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                           lot,
                           loc_value,       # or `from_location`/`to_location` as appropriate
                           trans_type,
-                          warehouse
+                          warehouse,
+                          sb
                         )
                     )
 
