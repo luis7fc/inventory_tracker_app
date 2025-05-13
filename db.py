@@ -328,13 +328,31 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     if cur.fetchone()[0] > 0:
                         raise Exception(f"Scan {sid} already used; return required before reuse.")
 
-                    # record the scan
+                    # record the scan (now with timestamp and location)
                     cur.execute(
-                        "INSERT INTO scan_verifications "
-                        "(item_code, scan_id, job_number, lot_number, warehouse, transaction_type) "
-                        "VALUES (%s, %s, %s, %s, %s, %s)",
-                        (item_code, sid, job, lot, warehouse, trans_type)
+                        """
+                        INSERT INTO scan_verifications
+                          (item_code,
+                           scan_id,
+                           job_number,
+                           lot_number,
+                           scan_time,
+                           location,
+                           transaction_type,
+                           warehouse)
+                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s)
+                        """,
+                        (
+                          item_code,
+                          sid,
+                          job,
+                          lot,
+                          loc_value,       # or `from_location`/`to_location` as appropriate
+                          trans_type,
+                          warehouse
+                        )
                     )
+
 
                     # if it's a Return, log its location too
                     if trans_type == "Return":
