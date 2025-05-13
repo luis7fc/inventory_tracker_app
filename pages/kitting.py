@@ -9,11 +9,16 @@ from db import get_db_cursor  # for scan collection
 def run():
     st.title("📦 Job Kitting")
 
-    # Source location input
-    source_location = st.text_input(
-        "Source Location",
-        help="Location for issue/return (e.g., staging area)."
-    ).strip()
+    #Transaction type + single location input
+    tx_type = st.selectbox(
+        "Transaction Type",
+        ["Issue","Return"],
+        help="Select 'Issue' to pull stock from this location, or 'Return' to credit it here."
+        )
+    location = st.text_input(
+        "Location",
+        help="If Issue: this is your from_location; if Return: this is your to_location."
+        ).strip()
 
     # Initialize session state
     if 'job_lot_queue' not in st.session_state:
@@ -44,7 +49,7 @@ def run():
             continue
 
         # Table header
-        headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost", "Status"]
+        headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
         cols = st.columns([1, 3, 1, 1, 1, 1, 1])
         for col, hdr in zip(cols, headers):
             col.markdown(f"**{hdr}**")
@@ -99,12 +104,28 @@ def run():
             for i in range(1, total + 1):
                 key = f"scan_{item_code}_{i}"
                 scan_inputs[key] = st.text_input(f"Scan {i}", key=key)
-
+                
         if st.button("Finalize Scans"):
-            if not source_location:
-                st.error("Please enter a Source Location before finalizing scans.")
+            if not location:
+                st.error("Please enter a Location before finalizing scans.")
             else:
-                finalize_scans(scans_needed, scan_inputs, st.session_state.job_lot_queue, source_location)
+                # wire up the single input as either from_location or to_location
+                if tx_type == "Issue":
+                    finalize_scans(
+                        scans_needed,
+                        scan_inputs,
+                        st.session_state.job_lot_queue,
+                        from_location=location,
+                        to_location=None
+                    )
+                else: #Return
+                    finalize_scans(
+                        scans_needed,
+                        scan_inputs,
+                        st.session_state.job_lot_queue,
+                        from_location=None,
+                        to_location=location
+                    )
                 st.success("Scans processed and inventory updated.")
 
 # End of job_kitting.py
