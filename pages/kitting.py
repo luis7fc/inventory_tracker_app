@@ -110,6 +110,8 @@ def run():
             if not location:
                 st.error("Please enter a Location before finalizing scans.")
             else:
+                uid = st.session_state.user
+                sb = st.session_state.user
                 # wire up the single input as either from_location or to_location
                 if tx_type == "Issue":
                     finalize_scans(
@@ -117,7 +119,9 @@ def run():
                         scan_inputs,
                         st.session_state.job_lot_queue,
                         from_location=location,
-                        to_location=None
+                        to_location=None,
+                        user_id=uid,
+                        scanned_by=sb,
                     )
                 else: #Return
                     finalize_scans(
@@ -125,7 +129,9 @@ def run():
                         scan_inputs,
                         st.session_state.job_lot_queue,
                         from_location=None,
-                        to_location=location
+                        to_location=location,
+                        user_id=uid,
+                        scanned_by=sb,
                     )
                 st.success("Scans processed and inventory updated.")
 
