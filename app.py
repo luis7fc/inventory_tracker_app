@@ -37,7 +37,7 @@ admin_pages = [
 ]
 
 # Combine pages based on role
-if st.session_state.get('user_role') == 'admin':
+if st.session_state.get('role') == 'admin':
     pages = base_pages + admin_pages
 else:
     pages = base_pages
