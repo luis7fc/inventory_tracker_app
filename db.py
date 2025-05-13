@@ -308,7 +308,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                          item_code,
                          quantity,
                          user_id)
-                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %$)
+                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
                 """
                 cur.execute(sql,
                     (trans_type,
