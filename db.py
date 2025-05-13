@@ -329,7 +329,12 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 # 4) Insert each scan into scan_verifications (and current_scan_location for Returns)
                 # 4) Insert each scan into scan_verifications (and current_scan_location for Returns)
                 for idx in range(1, qty + 1):
-                    sid = scan_inputs.get(f"scan_{item_code}_{idx}")
+                    sid = scan_inputs.get(f"scan_{item_code}_{idx}", "").strip()
+
+                    #sanity-check input
+                    if not sid:
+                        raise Exception(f"Missing scan ID for {item_code} #{idx}")
+                    
                     # use the passed-in scanned_by instead of session access
                     sb = scanned_by  
 
@@ -364,11 +369,24 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                         """,
                         (item_code, sid, job, lot, loc_value, trans_type, warehouse, sb)
                     )
-                    # if it's a Return, log its current_scan_location as well
+
                     if trans_type == "Return":
+                        #record that this scan is now back at loc_value
                         cur.execute(
-                            "INSERT INTO current_scan_location (scan_id, item_code, location) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                            """
+                            INSERT INTO current_scan_location
+                              (scan_id,item_code, location)
+                            VALUES (%s,%s,%s)
+                            ON CONFLICT DO NOTHING
+                            """,
                             (sid, item_code, loc_value)
+                        )
+
+                    elif trans_type == "Job Issue":
+                        #remove it from current_scan_location, since it's being issued out of inventory
+                        cur.execute(
+                            "DELETE FROM current_scan_location WHERE scan_id = %s",
+                            (sid,)
                         )
 
                         
@@ -384,7 +402,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     (item_code, loc_value, delta, warehouse,)
                 )
 
-                total_needed -= need
+                total_needed -= qty
                 if total_needed <= 0:
                     break
 
