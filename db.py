@@ -255,54 +255,114 @@ def submit_kitting(kits):
                     (job, lot, item_code)
                 )
 
-def finalize_scans(scans_needed, scan_inputs, job_lot_queue, source_location):
+def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None):
     """
-    Process scans for issues/returns:
-    - Insert transactions, scan_verifications, inventory +/-, update scan_location.
+    Process scans for Job Issues, Returns, and (if needed) Internal Movements:
+    - Insert into transactions (with dynamic from/to location)
+    - Insert into scan_verifications (+ current_scan_location for Returns)
+    - Update current_inventory (+/– based on transaction type)
     """
+    from your_project.db import get_db_cursor
+
     with get_db_cursor() as cur:
         for item_code, lots in scans_needed.items():
             total_needed = sum(lots.values())
+
             for (job, lot), need in lots.items():
                 assign = min(need, total_needed)
                 if assign == 0:
                     continue
-                trans_type = 'Job Issue' if assign > 0 else 'Return'
-                qty = assign if assign > 0 else abs(assign)
-                # fetch warehouse
+
+                # 1) Determine transaction type, qty, and which location field/value to use
+                if assign > 0:
+                    trans_type = "Job Issue"
+                    loc_field  = "from_location"
+                    loc_value  = from_location
+                    qty        = assign
+                else:
+                    trans_type = "Return"
+                    loc_field  = "to_location"
+                    loc_value  = to_location
+                    qty        = abs(assign)
+
+                # 2) Fetch warehouse from pulltags
                 cur.execute(
-                    "SELECT warehouse FROM pulltags WHERE job_number = %s AND lot_number = %s AND item_code = %s LIMIT 1",
+                    "SELECT warehouse "
+                    "  FROM pulltags "
+                    " WHERE job_number = %s AND lot_number = %s AND item_code = %s "
+                    " LIMIT 1",
                     (job, lot, item_code)
                 )
                 wh = cur.fetchone()
                 warehouse = wh[0] if wh else None
-                # 1) transaction
-                cur.execute(
-                    "INSERT INTO transactions (transaction_type,warehouse,source_location,job_number,lot_number,item_code,quantity) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                    (trans_type, warehouse, source_location, job, lot, item_code, qty)
+
+                # 3) Insert into transactions with dynamic location column
+                sql = f"""
+                    INSERT INTO transactions
+                        (transaction_type,
+                         warehouse,
+                         {loc_field},
+                         job_number,
+                         lot_number,
+                         item_code,
+                         quantity)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql,
+                    (trans_type,
+                     warehouse,
+                     loc_value,
+                     job,
+                     lot,
+                     item_code,
+                     qty)
                 )
-                # 2) scans
-                for idx in range(1, qty+1):
+
+                # 4) Insert each scan into scan_verifications (and current_scan_location for Returns)
+                for idx in range(1, qty + 1):
                     sid = scan_inputs.get(f"scan_{item_code}_{idx}")
-                    cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s", (sid,))
+                    # prevent reuse
+                    cur.execute(
+                        "SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s",
+                        (sid,)
+                    )
                     if cur.fetchone()[0] > 0:
                         raise Exception(f"Scan {sid} already used; return required before reuse.")
+
+                    # record the scan
                     cur.execute(
-                        "INSERT INTO scan_verifications (item_code,scan_id,job_number,lot_number,warehouse,transaction_type) VALUES (%s,%s,%s,%s,%s,%s)",
+                        "INSERT INTO scan_verifications "
+                        "(item_code, scan_id, job_number, lot_number, warehouse, transaction_type) "
+                        "VALUES (%s, %s, %s, %s, %s, %s)",
                         (item_code, sid, job, lot, warehouse, trans_type)
                     )
-                    if trans_type == 'Return':
+
+                    # if it's a Return, log its location too
+                    if trans_type == "Return":
                         cur.execute(
-                            "INSERT INTO current_scan_location (scan_id, item_code, location) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
-                            (sid, item_code, source_location)
+                            "INSERT INTO current_scan_location "
+                            "(scan_id, item_code, location) "
+                            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                            (sid, item_code, loc_value)
                         )
-                # 3) inventory update
-                if trans_type == 'Job Issue':
-                    cur.execute("UPDATE current_inventory SET quantity = quantity - %s WHERE item_code = %s AND location = %s",
-                                 (qty, item_code, source_location))
-                else:
-                    cur.execute("UPDATE current_inventory SET quantity = quantity + %s WHERE item_code = %s AND location = %s",
-                                 (qty, item_code, source_location))
+
+                # 5) Update current_inventory (+/–)
+                if trans_type == "Job Issue":
+                    cur.execute(
+                        "UPDATE current_inventory "
+                        "   SET quantity = quantity - %s "
+                        " WHERE item_code = %s AND location = %s",
+                        (qty, item_code, loc_value)
+                    )
+                else:  # Return
+                    cur.execute(
+                        "UPDATE current_inventory "
+                        "   SET quantity = quantity + %s "
+                        " WHERE item_code = %s AND location = %s",
+                        (qty, item_code, loc_value)
+                    )
+
                 total_needed -= need
                 if total_needed <= 0:
                     break
+
