@@ -120,7 +120,6 @@ def run():
                         st.session_state.job_lot_queue,
                         from_location=location,
                         to_location=None,
-                        user_id=uid,
                         scanned_by=sb,
                     )
                 else: #Return
@@ -130,7 +129,6 @@ def run():
                         st.session_state.job_lot_queue,
                         from_location=None,
                         to_location=location,
-                        user_id=uid,
                         scanned_by=sb,
                     )
                 st.success("Scans processed and inventory updated.")
