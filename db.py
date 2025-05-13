@@ -272,16 +272,21 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     continue
 
                 # 1) Determine transaction type, qty, and which location field/value to use
-                if assign > 0:
+                if from_location is not None and to_location is None:
                     trans_type = "Job Issue"
                     loc_field  = "from_location"
                     loc_value  = from_location
                     qty        = assign
-                else:
+                elif to_location is not None and from_location is None:
                     trans_type = "Return"
                     loc_field  = "to_location"
                     loc_value  = to_location
                     qty        = abs(assign)
+
+                else:
+                    raise ValueError(
+                        "finalize_scans: must provide one of from or to location"
+                        )
 
                 # 2) Fetch warehouse from pulltags
                 cur.execute(
