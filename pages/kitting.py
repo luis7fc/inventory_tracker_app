@@ -110,27 +110,47 @@ def run():
             if not location:
                 st.error("Please enter a Location before finalizing scans.")
             else:
-                uid = st.session_state.user
                 sb = st.session_state.user
-                # wire up the single input as either from_location or to_location
-                if tx_type == "Issue":
-                    finalize_scans(
-                        scans_needed,
-                        scan_inputs,
-                        st.session_state.job_lot_queue,
-                        from_location=location,
-                        to_location=None,
-                        scanned_by=sb,
-                    )
-                else: #Return
-                    finalize_scans(
-                        scans_needed,
-                        scan_inputs,
-                        st.session_state.job_lot_queue,
-                        from_location=None,
-                        to_location=location,
-                        scanned_by=sb,
-                    )
-                st.success("Scans processed and inventory updated.")
+
+                # 1) Calculate total scans for the progress bar
+                total_scans = sum(
+                    qty
+                    for lots in scans_needed.values()
+                    for qty in lots.values()
+                )
+
+                # 2) Create and initialize the progress bar
+                progress_bar = st.progress(0)
+
+                # 3) Show a spinner while scans are processed
+                with st.spinner("Processing scans…"):
+                    def update_progress(pct: int):
+                        # pct is an integer from 0 to 100
+                        progress_bar.progress(pct)
+
+                    # 4) Call finalize_scans with our progress callback
+                    if tx_type == "Issue":
+                        finalize_scans(
+                            scans_needed,
+                            scan_inputs,
+                            st.session_state.job_lot_queue,
+                            from_location=location,
+                            to_location=None,
+                            scanned_by=sb,
+                            progress_callback=update_progress
+                        )
+                    else:  # Return
+                        finalize_scans(
+                            scans_needed,
+                            scan_inputs,
+                            st.session_state.job_lot_queue,
+                            from_location=None,
+                            to_location=location,
+                            scanned_by=sb,
+                            progress_callback=update_progress
+                        )
+
+        # 5) Final success message
+        st.success("Scans processed and inventory updated.")
 
 # End of job_kitting.py
