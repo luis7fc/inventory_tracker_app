@@ -262,8 +262,6 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
     - Insert into scan_verifications (+ current_scan_location for Returns)
     - Update current_inventory (+/– based on transaction type)
     """
-    
-
     with get_db_cursor() as cur:
         for item_code, lots in scans_needed.items():
             total_needed = sum(lots.values())
