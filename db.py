@@ -327,62 +327,50 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 )
 
                 # 4) Insert each scan into scan_verifications (and current_scan_location for Returns)
+                # 4) Insert each scan into scan_verifications (and current_scan_location for Returns)
                 for idx in range(1, qty + 1):
                     sid = scan_inputs.get(f"scan_{item_code}_{idx}")
-                    sb = st.session_state.user
-                    sb = scanned_by
+                    # use the passed-in scanned_by instead of session access
+                    sb = scanned_by  
 
-                    #determine how many times this scan has been issued vs returned
+                    # determine how many times this scan has been issued vs returned
                     cur.execute(
-                        "SELECT COUNT (*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'",
+                        "SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'",
+                        (sid,)
+                    )
+                    issues = cur.fetchone()[0]
+                    cur.execute(
+                        "SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'",
                         (sid,)
                     )
                     returns = cur.fetchone()[0]
 
+                    # guard against over-issuing or over-returning
                     if trans_type == "Job Issue":
-                        # Don't issue again while there's still at least one unreturned issue
                         if issues - returns > 0:
                             raise Exception(f"Scan {sid} already issued; return required before reuse.")
-                        else: #return
-                            if issues > 0 and returns >= issues:
-                                raise Exception(f"Scan {sid} already fully returned; cannot return again.")
-                            
+                    else:  # Return
+                        # allow first return even without prior issues; only block if all recorded issues have been returned
+                        if issues > 0 and returns >= issues:
+                            raise Exception(f"Scan {sid} already fully returned; cannot return again.")
+
                     # record the scan (now with timestamp and location)
                     cur.execute(
                         """
                         INSERT INTO scan_verifications
-                          (item_code,
-                           scan_id,
-                           job_number,
-                           lot_number,
-                           scan_time,
-                           location,
-                           transaction_type,
-                           warehouse,
-                           scanned_by)
-                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s,%s)
+                          (item_code, scan_id, job_number, lot_number,
+                           scan_time, location, transaction_type, warehouse, scanned_by)
+                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
                         """,
-                        (
-                          item_code,
-                          sid,
-                          job,
-                          lot,
-                          loc_value,       # or `from_location`/`to_location` as appropriate
-                          trans_type,
-                          warehouse,
-                          sb
-                        )
+                        (item_code, sid, job, lot, loc_value, trans_type, warehouse, sb)
                     )
-
-
-                    # if it's a Return, log its location too
+                    # if it's a Return, log its current_scan_location as well
                     if trans_type == "Return":
                         cur.execute(
-                            "INSERT INTO current_scan_location "
-                            "(scan_id, item_code, location) "
-                            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                            "INSERT INTO current_scan_location (scan_id, item_code, location) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                             (sid, item_code, loc_value)
                         )
+
                         
                 #5) UPSERT into current_inventory: subtract for Issues, add for Returns
                 delta = qty if trans_type == "Return" else -qty
