@@ -337,7 +337,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                         "SELECT COUNT (*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'",
                         (sid,)
                     )
-                    returns = cur_fetchone()[0]
+                    returns = cur.fetchone()[0]
 
                     if trans_type == "Job Issue":
                         # Don't issue again while there's still at least one unreturned issue
