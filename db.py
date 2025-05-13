@@ -331,14 +331,22 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     sid = scan_inputs.get(f"scan_{item_code}_{idx}")
                     sb = st.session_state.user
                     sb = scanned_by
-                    # prevent reuse
+
+                    #determine how many times this scan has been issued vs returned
                     cur.execute(
-                        "SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s",
+                        "SELECT COUNT (*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'",
                         (sid,)
                     )
-                    if cur.fetchone()[0] > 0:
-                        raise Exception(f"Scan {sid} already used; return required before reuse.")
+                    returns = cur_fetchone()[0]
 
+                    if trans_type == "Job Issue":
+                        # Don't issue again while there's still at least one unreturned issue
+                        if issues - returns > 0:
+                            raise Exception(f"Scan {sid} already issued; return required before reuse.")
+                        else: #return
+                            if issues > 0 and returns >= issues:
+                                raise Exception(f"Scan {sid} already fully returned; cannot return again.")
+                            
                     # record the scan (now with timestamp and location)
                     cur.execute(
                         """
