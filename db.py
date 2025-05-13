@@ -362,22 +362,18 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                             "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                             (sid, item_code, loc_value)
                         )
-
-                # 5) Update current_inventory (+/–)
-                if trans_type == "Job Issue":
-                    cur.execute(
-                        "UPDATE current_inventory "
-                        "   SET quantity = quantity - %s "
-                        " WHERE item_code = %s AND location = %s",
-                        (qty, item_code, loc_value)
-                    )
-                else:  # Return
-                    cur.execute(
-                        "UPDATE current_inventory "
-                        "   SET quantity = quantity + %s "
-                        " WHERE item_code = %s AND location = %s",
-                        (qty, item_code, loc_value)
-                    )
+                        
+                #5) UPSERT into current_inventory: subtract for Issues, add for Returns
+                delta = qty if trans_type == "Return" else -qty
+                cur.execute(
+                    """
+                    INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s,%s,%s,%s)
+                    ON CONFLICT (item_code, location, warehouse) DO UPDATE
+                        SET quantity = current_inventory.quantity + EXCLUDED.quantity
+                    """,
+                    (item_code, loc_value, delta, warehouse,)
+                )
 
                 total_needed -= need
                 if total_needed <= 0:
