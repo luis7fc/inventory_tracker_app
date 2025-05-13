@@ -64,8 +64,9 @@ def run():
             key = f"kit_{job}_{lot}_{row['item_code']}"
             default = row['qty_req']
             kq = cols[4].number_input(
-                label="",
+                label="Kit Qty",
                 min_value=-row['qty_req'],
+                label_visibility="collapsed",
                 max_value=row['qty_req'],
                 value=st.session_state.kitting_inputs.get(key, default),
                 key=key
