@@ -255,7 +255,7 @@ def submit_kitting(kits):
                     (job, lot, item_code)
                 )
 
-def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None, scanned_by=None):
+def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None, scanned_by=None, progress_callback=None):
     """
     Process scans for Job Issues, Returns, and (if needed) Internal Movements:
     - Insert into transactions (with dynamic from/to location)
@@ -388,6 +388,13 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                             "DELETE FROM current_scan_location WHERE scan_id = %s",
                             (sid,)
                         )
+
+                    #bump the progress
+                        done += 1
+                        if progress_callback:
+                            #give a 0-100 integer percent
+                            pct = int(done/total_scans * 100)
+                            progress_callback(pct)
 
                         
                 #5) UPSERT into current_inventory: subtract for Issues, add for Returns
