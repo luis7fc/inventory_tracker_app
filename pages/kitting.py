@@ -1,6 +1,13 @@
 import streamlit as st
-from db import get_pulltag_rows, submit_kitting, finalize_scans
-from db import get_db_cursor  # for scan collection
+from db import (
+    get_pulltag_rows,
+    finalize_scans,
+    submit_kitting,
+    get_db_cursor,
+    insert_pulltag_line,
+    update_pulltag_line,
+    delete_pulltag_line,
+)
 
 # -----------------------------------------------------------------------------
 # Main Streamlit App Entry
@@ -9,16 +16,16 @@ from db import get_db_cursor  # for scan collection
 def run():
     st.title("📦 Job Kitting")
 
-    #Transaction type + single location input
+    # Transaction type + single location input
     tx_type = st.selectbox(
         "Transaction Type",
-        ["Issue","Return"],
+        ["Issue", "Return"],
         help="Select 'Issue' to pull stock from this location, or 'Return' to credit it here."
-        )
+    )
     location = st.text_input(
         "Location",
         help="If Issue: this is your from_location; if Return: this is your to_location."
-        ).strip()
+    ).strip()
 
     # Initialize session state
     if 'job_lot_queue' not in st.session_state:
@@ -43,6 +50,38 @@ def run():
     # 2) Kitting UI for each queued Job/Lot
     for job, lot in st.session_state.job_lot_queue:
         st.markdown(f"---\n**Job:** {job} | **Lot:** {lot}")
+
+        # 2.1) Add New Kitted Item scoped to this Job/Lot
+        st.markdown("### ➕ Add New Kitted Item")
+        with st.form(f"add_new_line_{job}_{lot}", clear_on_submit=True):
+            new_code = st.text_input(
+                "Item Code", 
+                placeholder="Scan or type item_code",
+                key=f"new_code_{job}_{lot}"
+            )
+            new_qty = st.number_input(
+                "Quantity Kitted", 
+                min_value=1, 
+                step=1,
+                key=f"new_qty_{job}_{lot}"
+            )
+            if st.form_submit_button("Add Item"):
+                # Validate existence in items_master and insert
+                with get_db_cursor() as conn:
+                    cur = conn
+                    cur.execute(
+                        "SELECT item_description FROM items_master WHERE item_code = %s",
+                        (new_code,)
+                    )
+                    found = cur.fetchone()
+                    if not found:
+                        st.error(f"`{new_code}` not found in items_master!")
+                    else:
+                        insert_pulltag_line(conn, job, lot, new_code, new_qty)
+                        st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
+                        st.experimental_rerun()
+
+        # 2.2) Load existing pull-tag rows
         rows = get_pulltag_rows(job, lot)
         if not rows:
             st.info("No pull-tags found for this combination.")
@@ -66,20 +105,33 @@ def run():
             kq = cols[4].number_input(
                 label="Kit Qty",
                 min_value=-row['qty_req'],
-                label_visibility="collapsed",
                 max_value=row['qty_req'],
                 value=st.session_state.kitting_inputs.get(key, default),
-                key=key
+                key=key,
+                label_visibility="collapsed"
             )
             cols[5].write(row['cost_code'])
             cols[6].write(row['status'])
             st.session_state.kitting_inputs[(job, lot, row['item_code'])] = kq
 
-        # Submit kitting for this Job/Lot
+        # 2.3) Submit kitting for this Job/Lot using CRUD helpers
         if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
-            # Filter inputs for this combo
-            kits = {k: v for k, v in st.session_state.kitting_inputs.items() if k[0] == job and k[1] == lot}
-            submit_kitting(kits)
+            kits = {
+                code: qty
+                for (j, l, code), qty in st.session_state.kitting_inputs.items()
+                if j == job and l == lot
+            }
+            with get_db_cursor() as conn:
+                existing = [r['item_code'] for r in rows]
+                for code, qty in kits.items():
+                    if code not in existing and qty > 0:
+                        insert_pulltag_line(conn, job, lot, code, qty)
+                for r in rows:
+                    qty = kits.get(r['item_code'], 0)
+                    if qty == 0:
+                        delete_pulltag_line(conn, r['id'])
+                    elif qty != r['qty_req']:
+                        update_pulltag_line(conn, r['id'], qty)
             st.success(f"Kitting updated for {job}-{lot}.")
 
     # 3) Scan Collection
