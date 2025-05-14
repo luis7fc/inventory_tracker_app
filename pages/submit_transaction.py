@@ -28,7 +28,7 @@ def run():
             line["item_code"]  = col1.text_input(
                 "Item Code", line.get("item_code", ""), key=f"recv_item_code_{idx}"
             )
-            default_qty = max(1, line.get("quantity",1)
+            default_qty = max(1, line.get("quantity",1))
             line["quantity"]   = col2.number_input(
                 "Quantity", min_value=1, step=1,
                 value=default_qty, key=f"recv_quantity_{idx}"
