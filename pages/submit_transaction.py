@@ -61,7 +61,7 @@ def run():
     if st.button("Add Line"):
         lines.append({"item_code": "", "quantity": 0, "pallet_qty": 1, "location": "", "scans": []})
         st.session_state["recv_lines"] = lines
-        st.experimental_rerun()
+        st.rerun()
 
     # Warehouse selector
     warehouse = st.selectbox("Warehouse", WAREHOUSES, key="recv_warehouse")
