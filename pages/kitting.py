@@ -65,21 +65,25 @@ def run():
                 step=1,
                 key=f"new_qty_{job}_{lot}"
             )
-            if st.form_submit_button("Add Item"):
-                # Validate existence in items_master and insert
-                with get_db_cursor() as conn:
-                    cur = conn
-                    cur.execute(
-                        "SELECT item_description FROM items_master WHERE item_code = %s",
-                        (new_code,)
-                    )
-                    found = cur.fetchone()
-                    if not found:
-                        st.error(f"`{new_code}` not found in items_master!")
-                    else:
-                        insert_pulltag_line(conn, job, lot, new_code, new_qty)
-                        st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
-                        st.rerun()
+            add_clicked = st.form_submit_button("Add Item")
+
+        if add_clicked:
+            inserted = False
+            with get_db_cursor() as cur:
+                # validate existence in items_master
+                cur.execute(
+                    "SELECT item_description FROM items_master WHERE item_code = %s",
+                    (new_code,)
+                )
+                row = cur.fetchone()
+                if row:
+                    insert_pulltag_line(cur, job, lot, new_code, new_qty)
+                    inserted = True
+            if not inserted:
+                st.error(f"`{new_code}` not found in items_master!")
+            else:
+                st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
+                st.rerun()
 
         # 2.2) Load existing pull-tag rows
         rows = get_pulltag_rows(job, lot)
@@ -136,9 +140,7 @@ def run():
                         delete_pulltag_line(cur, r['id'])
                     elif new_qty != r['qty_req']:
                         update_pulltag_line(cur, r['id'], new_qty)
-            # commit & close happen automatically on exiting the with-block
             st.success(f"Kitting updated for {job}-{lot}.")
-
 
     # 3) Scan Collection
     scans_needed = {}
