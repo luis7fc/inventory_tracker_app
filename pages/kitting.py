@@ -131,7 +131,7 @@ def run():
                     if qty == 0:
                         delete_pulltag_line(conn, r['id'])
                     elif qty != r['qty_req']:
-                        update_pulltag_line(conn, r['id'], qty)
+                        update_pulltag_line(conn, r['id'])
             st.success(f"Kitting updated for {job}-{lot}.")
 
     # 3) Scan Collection
