@@ -67,7 +67,6 @@ def validate_scans(cursor, scan_inputs: List[str], item_code: str, transaction_t
     return True, ""
 
 def run():
-    st.set_page_config(page_title="Inventory Transaction", layout="wide")
     st.header("🎞️ Submit Inventory Transaction")
 
     # Initialize session state
