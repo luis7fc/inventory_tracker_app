@@ -422,11 +422,11 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
     """
     cur: psycopg2 cursor from get_db_cursor()
-    Inserts a new pull‐tag line using items_master metadata.
-    Returns the new line’s id.
+    Inserts a new line into pulltags table using items_master metadata.
+    Returns the new row’s id.
     """
     sql = """
-    INSERT INTO pulltag_lines
+    INSERT INTO pulltags
       (job_number, lot_number, item_code, quantity,
        description, cost_code, uom, status)
     SELECT
@@ -451,16 +451,16 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
 def update_pulltag_line(cur, line_id, quantity):
     """
     cur: psycopg2 cursor from get_db_cursor()
-    Updates the qty for an existing pull‐tag line.
+    Updates the quantity on an existing pulltag row.
     """
-    sql = "UPDATE pulltag_lines SET quantity = %s WHERE id = %s"
+    sql = "UPDATE pulltags SET quantity = %s WHERE id = %s"
     cur.execute(sql, (quantity, line_id))
 
 
 def delete_pulltag_line(cur, line_id):
     """
     cur: psycopg2 cursor from get_db_cursor()
-    Deletes a pull-tag line by its id.
+    Deletes a pulltag row by its id.
     """
-    sql = "DELETE FROM pulltag_lines WHERE id = %s"
+    sql = "DELETE FROM pulltags WHERE id = %s"
     cur.execute(sql, (line_id,))
