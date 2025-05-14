@@ -417,29 +417,50 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 if total_needed <= 0:
                     break
 
-def insert_pulltag_line(conn, job_number, lot_number, item_code, quantity):
-    """Grab metadata from items_master and insert a new line."""
+# In db.py
+
+def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
+    """
+    cur: psycopg2 cursor from get_db_cursor()
+    Inserts a new pull‐tag line using items_master metadata.
+    Returns the new line’s id.
+    """
     sql = """
     INSERT INTO pulltag_lines
-      (job_number, lot_number, item_code, quantity, description, cost_code, uom, status)
-    SELECT %s, item_code, %s, item_description, cost_code, uom, 'pending'
-      FROM items_master
-     WHERE item_code = %s
+      (job_number, lot_number, item_code, quantity,
+       description, cost_code, uom, status)
+    SELECT
+      %s,        -- job_number
+      %s,        -- lot_number
+      item_code,
+      %s,        -- quantity
+      item_description,
+      cost_code,
+      uom,
+      'pending'
+    FROM items_master
+    WHERE item_code = %s
     """
-    cur = conn.cursor()
+    # execute and fetch the new id in one go
     cur.execute(sql, (job_number, lot_number, quantity, item_code))
-    conn.commit()
-    return cur.lastrowid
+    # PostgreSQL: grab the last‐inserted serial
+    cur.execute("SELECT LASTVAL()")
+    return cur.fetchone()[0]
 
-def update_pulltag_line(conn, line_id, quantity):
+
+def update_pulltag_line(cur, line_id, quantity):
+    """
+    cur: psycopg2 cursor from get_db_cursor()
+    Updates the qty for an existing pull‐tag line.
+    """
     sql = "UPDATE pulltag_lines SET quantity = %s WHERE id = %s"
-    cur = conn.cursor()
     cur.execute(sql, (quantity, line_id))
-    conn.commit()
 
-def delete_pulltag_line(conn, line_id):
+
+def delete_pulltag_line(cur, line_id):
+    """
+    cur: psycopg2 cursor from get_db_cursor()
+    Deletes a pull-tag line by its id.
+    """
     sql = "DELETE FROM pulltag_lines WHERE id = %s"
-    cur = conn.cursor()
     cur.execute(sql, (line_id,))
-    conn.commit()
-
