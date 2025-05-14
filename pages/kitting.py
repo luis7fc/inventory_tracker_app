@@ -121,18 +121,24 @@ def run():
                 for (j, l, code), qty in st.session_state.kitting_inputs.items()
                 if j == job and l == lot
             }
-            with get_db_cursor() as conn:
+            with get_db_cursor() as cur:               # yields a psycopg2 cursor
                 existing = [r['item_code'] for r in rows]
+
+                # INSERT any brand-new item_codes
                 for code, qty in kits.items():
                     if code not in existing and qty > 0:
-                        insert_pulltag_line(conn, job, lot, code, qty)
+                        insert_pulltag_line(cur, job, lot, code, qty)
+
+                # UPDATE changed quantities, DELETE zeros
                 for r in rows:
-                    qty = kits.get(r['item_code'], 0)
-                    if qty == 0:
-                        delete_pulltag_line(conn, r['id'])
-                    elif qty != r['qty_req']:
-                        update_pulltag_line(conn, r['id'])
+                    new_qty = kits.get(r['item_code'], 0)
+                    if new_qty == 0:
+                        delete_pulltag_line(cur, r['id'])
+                    elif new_qty != r['qty_req']:
+                        update_pulltag_line(cur, r['id'], new_qty)
+            # commit & close happen automatically on exiting the with-block
             st.success(f"Kitting updated for {job}-{lot}.")
+
 
     # 3) Scan Collection
     scans_needed = {}
