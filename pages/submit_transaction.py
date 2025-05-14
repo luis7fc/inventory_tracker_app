@@ -15,7 +15,7 @@ def run():
     # PO-level input
     po_number = st.text_input("PO Number", key="recv_po_number")
 
-    # Initialize or retrieve existing receive lines
+    # Initialize or retrieve existing receive lines (default quantity=1)
     lines = st.session_state.get(
         "recv_lines",
         [{"item_code": "", "quantity": 1, "pallet_qty": 1, "location": "", "scans": []}]
@@ -25,65 +25,68 @@ def run():
     for idx, line in enumerate(lines):
         with st.expander(f"Line {idx+1}", expanded=True):
             col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 2, 1])
-            line["item_code"]  = col1.text_input(
+            line["item_code"] = col1.text_input(
                 "Item Code", line.get("item_code", ""), key=f"recv_item_code_{idx}"
             )
-            default_qty = max(1, line.get("quantity",1))
-            line["quantity"]   = col2.number_input(
-                "Quantity", min_value=1, step=1,
-                value=default_qty, key=f"recv_quantity_{idx}"
+            default_qty = max(1, line.get("quantity", 1))
+            line["quantity"] = col2.number_input(
+                "Quantity",
+                min_value=1,
+                step=1,
+                value=default_qty,
+                key=f"recv_quantity_{idx}"
             )
             line["pallet_qty"] = col3.number_input(
-                "Pallet Qty", min_value=1, step=1,
-                value=line.get("pallet_qty", 1), key=f"recv_pallet_{idx}"
+                "Pallet Qty",
+                min_value=1,
+                step=1,
+                value=line.get("pallet_qty", 1),
+                key=f"recv_pallet_{idx}"
             )
-            line["location"]   = col4.text_input(
+            line["location"] = col4.text_input(
                 "Location", line.get("location", ""), key=f"recv_location_{idx}"
             )
             if col5.button("Remove", key=f"recv_remove_{idx}"):
                 lines.pop(idx)
                 st.session_state["recv_lines"] = lines
-                st.experimental_rerun()
+                st.rerun()
 
-            # calculate expected scans per line based on pallet_qty
             expected_scans = math.ceil(line["quantity"] / line["pallet_qty"])
             scans = []
             for j in range(expected_scans):
                 scans.append(
                     st.text_input(
-                        f"Scan {j+1} of {expected_scans}",
-                        key=f"recv_scan_{idx}_{j}"
+                        f"Scan {j+1} of {expected_scans}", key=f"recv_scan_{idx}_{j}"
                     )
                 )
             line["scans"] = scans
 
-    # Button to add new line
+    # Button to add a new line
     if st.button("Add Line"):
-        lines.append({"item_code": "", "quantity": 0, "pallet_qty": 1, "location": "", "scans": []})
+        lines.append({"item_code": "", "quantity": 1, "pallet_qty": 1, "location": "", "scans": []})
         st.session_state["recv_lines"] = lines
         st.rerun()
 
     # Warehouse selector
     warehouse = st.selectbox("Warehouse", WAREHOUSES, key="recv_warehouse")
 
-    # Submit
+    # Confirm & Submit
     if st.button("Confirm & Submit Receiving"):
-        # 1) validate PO-level
+        # 1) Validate PO Number
         if not po_number:
             st.error("PO Number is required.")
             return
 
-        # 2) validate each line
+        # 2) Validate each line
         error_msgs = []
         for idx, line in enumerate(lines):
-            # required fields
             if not line["item_code"] or line["quantity"] <= 0 or not line["location"]:
                 error_msgs.append(f"Line {idx+1}: missing item code, quantity, or location.")
 
-            # multi-item rule via locations table
+            # Multi-item rule via locations table
             with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT multi_item_allowed FROM locations WHERE location_code=%s",
+                    "SELECT multi_item_allowed FROM locations WHERE location=%s",
                     (line["location"],)
                 )
                 row = cur.fetchone()
@@ -100,13 +103,13 @@ def run():
                         f"Line {idx+1}: location '{line['location']}' contains other item(s)."
                     )
 
-            # scan-count logic
+            # Scan-count logic
             expected = math.ceil(line["quantity"] / line["pallet_qty"])
             scans = line.get("scans", [])
             if len(scans) != expected or any(not s.strip() for s in scans):
                 error_msgs.append(f"Line {idx+1}: scans count mismatch or blank entries.")
 
-            # scan uniqueness (skip for KIT locations)
+            # Scan uniqueness (skip for KIT locations)
             if line["location"] not in SKIP_SCAN_CHECK_LOCATIONS:
                 with get_db_cursor() as cur:
                     for scan_id in scans:
@@ -124,11 +127,11 @@ def run():
             st.error("\n".join(error_msgs))
             return
 
-        # 3) write to DB
+        # 3) Write to DB
         try:
             with get_db_cursor() as cur:
                 for line in lines:
-                    # insert transaction record
+                    # Insert transaction record
                     cur.execute(
                         """
                         INSERT INTO transactions (
@@ -153,7 +156,7 @@ def run():
                     )
                     txn_id = cur.fetchone()[0]
 
-                    # upsert current_inventory with warehouse
+                    # Upsert current_inventory with warehouse
                     cur.execute(
                         """
                         INSERT INTO current_inventory (item_code, location, warehouse, quantity)
@@ -164,7 +167,7 @@ def run():
                         (line["item_code"], line["location"], warehouse, line["quantity"])
                     )
 
-                    # insert scans
+                    # Insert scans
                     for scan_id in line["scans"]:
                         sid = scan_id.strip()
                         # scan_verifications (omit id so it auto-generates)
@@ -179,16 +182,12 @@ def run():
                             )
                             """,
                             (
-                                txn_id,
-                                line["item_code"],
-                                sid,
-                                line["location"],
-                                "Receiving",
-                                warehouse,
-                                st.session_state.user_id
+                                txn_id, line["item_code"], sid,
+                                line["location"], "Receiving",
+                                warehouse, st.session_state.user_id
                             )
                         )
-                        # upsert current_scan_locations
+                        # Upsert current_scan_locations
                         cur.execute(
                             """
                             INSERT INTO current_scan_locations (
@@ -204,7 +203,7 @@ def run():
                         )
 
             st.success("✅ Receiving transaction(s) recorded!")
-            # reset inputs & rerun
+            # Reset inputs & rerun
             for key in ["recv_po_number", "recv_warehouse"]:
                 st.session_state.pop(key, None)
             st.session_state.pop("recv_lines", None)
