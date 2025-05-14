@@ -150,7 +150,7 @@ def run():
                             "Receiving",
                             line["item_code"], line["quantity"], po_number,
                             line["location"],
-                            st.session_state.user_id,
+                            st.session_state.user,
                             warehouse
                         )
                     )
@@ -184,7 +184,7 @@ def run():
                             (
                                 txn_id, line["item_code"], sid,
                                 line["location"], "Receiving",
-                                warehouse, st.session_state.user_id
+                                warehouse, st.session_state.user
                             )
                         )
                         # Upsert current_scan_locations
