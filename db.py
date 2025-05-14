@@ -423,7 +423,7 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
     """
     cur: psycopg2 cursor from get_db_cursor()
     Inserts a new line into pulltags table using items_master metadata.
-    Returns the new row’s id.
+    Returns the new row’s id via RETURNING.
     """
     sql = """
     INSERT INTO pulltags
@@ -440,11 +440,10 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
       'pending'
     FROM items_master
     WHERE item_code = %s
+    RETURNING id
     """
     # execute and fetch the new id in one go
     cur.execute(sql, (job_number, lot_number, quantity, item_code))
-    # PostgreSQL: grab the last‐inserted serial
-    cur.execute("SELECT LASTVAL()")
     return cur.fetchone()[0]
 
 
