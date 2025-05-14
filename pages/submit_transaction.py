@@ -18,7 +18,7 @@ def run():
     # Initialize or retrieve existing receive lines
     lines = st.session_state.get(
         "recv_lines",
-        [{"item_code": "", "quantity": 0, "pallet_qty": 1, "location": "", "scans": []}]
+        [{"item_code": "", "quantity": 1, "pallet_qty": 1, "location": "", "scans": []}]
     )
 
     # Render line items
@@ -28,9 +28,10 @@ def run():
             line["item_code"]  = col1.text_input(
                 "Item Code", line.get("item_code", ""), key=f"recv_item_code_{idx}"
             )
+            default_qty = max(1, line.get("quantity",1)
             line["quantity"]   = col2.number_input(
                 "Quantity", min_value=1, step=1,
-                value=line.get("quantity", 0), key=f"recv_quantity_{idx}"
+                value=default_qty, key=f"recv_quantity_{idx}"
             )
             line["pallet_qty"] = col3.number_input(
                 "Pallet Qty", min_value=1, step=1,
