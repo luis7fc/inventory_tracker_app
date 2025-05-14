@@ -9,7 +9,7 @@ from config import WAREHOUSES
 SKIP_SCAN_CHECK_LOCATIONS = ("VKIT", "SKIT", "FKIT", "IKIT", "GKIT")
 
 
-def run_receiving():
+def run():
     st.header("📑 Submit Transaction — Receiving")
 
     # PO-level input
@@ -207,7 +207,7 @@ def run_receiving():
             for key in ["recv_po_number", "recv_warehouse"]:
                 st.session_state.pop(key, None)
             st.session_state.pop("recv_lines", None)
-            st.experimental_rerun()
+            st.rerun()
 
         except Exception as e:
             st.error(f"Failed to submit receiving: {e}")
