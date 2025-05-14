@@ -190,7 +190,7 @@ def run():
                         # Upsert current_scan_locations
                         cur.execute(
                             """
-                            INSERT INTO current_scan_locations (
+                            INSERT INTO current_scan_location (
                                 scan_id, item_code, location, updated_at
                             ) VALUES (%s, %s, %s, NOW())
                             ON CONFLICT (scan_id)
