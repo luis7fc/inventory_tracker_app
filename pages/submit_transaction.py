@@ -3,7 +3,7 @@
 import streamlit as st
 import math
 from db import get_db_cursor
-from config import WAREHOUSE_OPTIONS
+from config import WAREHOUSES
 
 # locations where pallet scans should skip uniqueness checks
 SKIP_SCAN_CHECK_LOCATIONS = ("VKIT", "SKIT", "FKIT", "IKIT", "GKIT")
@@ -63,7 +63,7 @@ def run_receiving():
         st.experimental_rerun()
 
     # Warehouse selector
-    warehouse = st.selectbox("Warehouse", WAREHOUSE_OPTIONS, key="recv_warehouse")
+    warehouse = st.selectbox("Warehouse", WAREHOUSES, key="recv_warehouse")
 
     # Submit
     if st.button("Confirm & Submit Receiving"):
