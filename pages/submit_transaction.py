@@ -86,7 +86,7 @@ def run():
             # Multi-item rule via locations table
             with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT multi_item_allowed FROM locations WHERE location=%s",
+                    "SELECT multi_item_allowed FROM locations WHERE location_code=%s",
                     (line["location"],)
                 )
                 row = cur.fetchone()
