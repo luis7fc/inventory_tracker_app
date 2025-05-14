@@ -417,3 +417,29 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 if total_needed <= 0:
                     break
 
+def insert_pulltag_line(conn, pulltag_id, item_code, quantity):
+    """Grab metadata from items_master and insert a new line."""
+    sql = """
+    INSERT INTO pulltag_lines
+      (pulltag_id, item_code, quantity, description, cost_code, uom)
+    SELECT %s, item_code, %s, item_description, cost_code, uom
+      FROM items_master
+     WHERE item_code = %s
+    """
+    cur = conn.cursor()
+    cur.execute(sql, (pulltag_id, quantity, item_code))
+    conn.commit()
+    return cur.lastrowid
+
+def update_pulltag_line(conn, line_id, quantity):
+    sql = "UPDATE pulltag_lines SET quantity = %s WHERE id = %s"
+    cur = conn.cursor()
+    cur.execute(sql, (quantity, line_id))
+    conn.commit()
+
+def delete_pulltag_line(conn, line_id):
+    sql = "DELETE FROM pulltag_lines WHERE id = %s"
+    cur = conn.cursor()
+    cur.execute(sql, (line_id,))
+    conn.commit()
+
