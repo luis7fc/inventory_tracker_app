@@ -174,15 +174,15 @@ def run():
                         cur.execute(
                             """
                             INSERT INTO scan_verifications (
-                                transaction_id, item_code, scan_time,
-                                scan_id, location, transaction_type,
+                                item_code, scan_time, scan_id, job_number, lot_number,
+                                location, transaction_type,
                                 warehouse, scanned_by
                             ) VALUES (
-                                %s, %s, NOW(), %s, %s, %s, %s, %s
+                                %s, NOW(), %s, %s, %s, %s, %s, %s, %s
                             )
                             """,
                             (
-                                txn_id, line["item_code"], sid,
+                                line["item_code"], sid, None, None,
                                 line["location"], "Receiving",
                                 warehouse, st.session_state.user
                             )
