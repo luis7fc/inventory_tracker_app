@@ -26,7 +26,7 @@ IRISH_TOASTS = [
 WAREHOUSE_OPTIONS = [
     "VVSOLAR", "VVSUNNOVA", "FNOSUNNOVA", "FNOSOLAR",
     "SACSOLAR", "SACSUNNOVA", "IESOLAR", "IEROOFING",
-    "VALSOLAR", "VALSUNNOVA", "VVROOFING", "FNOROOFING", "IEROOFING"
+    "VALSOLAR", "VALSUNNOVA", "VVROOFING", "FNOROOFING"
 ]
 
 # Helper Functions
@@ -134,10 +134,13 @@ def run():
         else:  # Receiving or Internal Movement
             total_qty = st.number_input("Total Quantity", min_value=1, step=1, key="total_qty")
             if transaction_type == "Receiving":
+                from_location = None
                 to_location = st.text_input("Receiving Location", key="to_location")
+                po_number = st.text_input("PO Number", key="po_number")
             else:  # Internal Movement
                 from_location = st.text_input("From Location", key="from_location")
                 to_location = st.text_input("To Location", key="to_location")
+                
 
         # Scans
         scan_inputs = []
