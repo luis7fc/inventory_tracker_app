@@ -79,7 +79,7 @@ def run():
                     else:
                         insert_pulltag_line(conn, job, lot, new_code, new_qty)
                         st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
-                        st.experimental_rerun()
+                        st.rerun()
 
         # 2.2) Load existing pull-tag rows
         rows = get_pulltag_rows(job, lot)
