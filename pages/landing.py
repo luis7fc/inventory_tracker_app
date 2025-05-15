@@ -17,21 +17,30 @@ def run():
     st.markdown(
         f"""
         <style>
-        /* ─── hide the built-in multipage nav ───────────────────────── */
+        /* ── hide the built-in multipage nav ───────────────────────── */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-        /* ─── translucent sidebar & transparent toolbar ───────────────── */
+        /* ── translucent sidebar & transparent toolbar ──────────────── */
         [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
-        [data-testid="stToolbar"] {{ background-color: transparent !important; box-shadow: none !important; }}
+        [data-testid="stToolbar"] {{
+          background-color: transparent !important;
+          box-shadow: none !important;
+        }}
 
-        /* ─── clear out any white container backgrounds ─────────────────── */
+        /* ── transparent top header ─────────────────────────────────── */
+        [data-testid="stHeader"] {{
+          background-color: transparent !important;
+          box-shadow: none !important;
+        }}
+
+        /* ── clear out any white container backgrounds ───────────────── */
         html, body,
         [data-testid="stAppViewContainer"],
         .block-container {{
           background-color: transparent !important;
         }}
 
-        /* ─── your logo as a full-screen DIV (z-index 0!) ─────────────── */
+        /* ── your logo as a full-screen DIV (z-index 0!) ───────────── */
         .bg-div {{
           position: fixed;
           top: 0; left: 0;
@@ -42,7 +51,7 @@ def run():
           z-index: 0 !important;
         }}
 
-        /* ─── gold/orange text for title & metrics ───────────────────── */
+        /* ── gold/orange text for title & metrics ─────────────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
@@ -55,8 +64,6 @@ def run():
         """,
         unsafe_allow_html=True,
     )
-
-
 
     #-Welcome message-
     user = st.session_state.get("user","")
