@@ -47,12 +47,12 @@ else:
     pages = base_pages
 
 page_names = pages
-choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=0)
+choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=page_names.index("Home"))
 #Map labels to module
 
 
 
- Route to the selected page
+#Route to the selected page
 if choice == "Home":
     landing.run()
 elif choice == "Receiving":
