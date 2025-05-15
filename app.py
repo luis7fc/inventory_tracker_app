@@ -47,7 +47,7 @@ else:
 
 page_names = pages
 
-st.sidebar.image("assets/logob.png", use_container_width=True)
+st.sidebar.image("assets/logoc.png", use_container_width=True)
 choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=page_names.index("Home"))
 #Map labels to module
 
