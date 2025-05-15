@@ -4,7 +4,7 @@ st.set_page_config(page_title="CRS Inventory Tracker", layout="wide")
 from auth import login
 
 # Import existing pages
-import pages.submit_transaction     as submit_transaction
+import pages.receiving     as receiving
 import pages.upload_init_csv        as upload_init_csv
 import pages.reports                as reports
 import pages.users                  as users
@@ -21,7 +21,7 @@ login()
 
 # --- Define Tabs ---
 base_pages = [
-    "Submit Transaction",
+    "Receiving",
     "Reports",
     "Users",
     "Manage Locations",
@@ -46,8 +46,8 @@ else:
 page = st.sidebar.selectbox("Navigation", pages)
 
 # Route to the selected page
-if page == "Submit Transaction":
-    submit_transaction.run()
+if page == "Receiving":
+    receiving.run()
 elif page == "Reports":
     reports.run()
 elif page == "Users":
