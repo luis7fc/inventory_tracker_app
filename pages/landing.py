@@ -17,21 +17,18 @@ def run():
     st.markdown(
         f"""
         <style>
-        /* ── 1) Hide built-in multipage nav ─────────────────────── */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-        /* ── 2) Full-screen hero DIV with your logo (no tint) ───── */
         .bg-div {{
           position: fixed;
           top: 0; left: 0;
           width: 100vw; height: 100vh;
           background: url("data:image/png;base64,{_LOGO_BASE64}") 
-                      no-repeat top center fixed !important;
-          background-size: contain !important;
+                      no-repeat center center fixed !important;
+          background-size: cover !important;
           z-index: -1;
         }}
 
-        /* ── 3) Gold/orange text for title & metrics ───────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
@@ -39,7 +36,6 @@ def run():
         }}
         </style>
 
-        <!-- background DIV must come *after* CSS -->
         <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
