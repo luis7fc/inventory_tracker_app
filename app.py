@@ -47,43 +47,30 @@ else:
     pages = base_pages
 
 page_names = pages
-choice = st.sidebar.selectbox("🔍 Navigate", page_names)
+choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=0)
 #Map labels to module
 
-page_map = {
-    "Home": landing,
-    "Receiving": receiving,
-    "Internal Movement": internal_movement,
-    "Reports": reports,
-    "Users": users,
-    "Manage Locations": manage_locations,
-    "Scan Lookup": scan_lookup,
-    "Kitting": kitting,
-    "Pull-tag Upload": pulltag_upload,
-    "Upload Init CSV": upload_init_csv,
-}
-page_map[choice].run()
 
-# Sidebar navigation
-#page = st.sidebar.selectbox("Navigation", pages)
 
-# Route to the selected page
-#if page == "Receiving":
- #   receiving.run()
-#elif page == "Reports":
-#    reports.run()
-#elif page == "Users":
-#    users.run()
-#elif page == "Manage Locations":
-#    manage_locations.run()
-#elif page == "Scan Lookup":
-#    scan_lookup.run()
-#elif page == "Kitting":
-#    kitting.run()
-#elif page == "Pull-tag Upload":
-#    pulltag_upload.run()
-#elif page == "Upload Init CSV":
-#    upload_init_csv.run()
-#elif page == "Internal Movement":
-#    internal_movement.run()
+ Route to the selected page
+if choice == "Home":
+    landing.run()
+elif choice == "Receiving":
+    receiving.run()
+elif choice == "Reports":
+    reports.run()
+elif choice == "Users":
+    users.run()
+elif choice == "Manage Locations":
+    manage_locations.run()
+elif choice == "Scan Lookup":
+    scan_lookup.run()
+elif choice == "Kitting":
+    kitting.run()
+elif choice == "Pull-tag Upload":
+    pulltag_upload.run()
+elif choice == "Upload Init CSV":
+    upload_init_csv.run()
+elif choice == "Internal Movement":
+    internal_movement.run()
 
