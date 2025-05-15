@@ -3,6 +3,7 @@
 import streamlit as st
 import math
 import random
+from collections import Counter
 from db import get_db_cursor
 from config import WAREHOUSES
 
@@ -127,6 +128,13 @@ def run():
                                 f"Scan '{scan_id}' already exists in location {existing_loc[0]}."
                             )
 
+        # Local duplicate scan guard across all lines
+        all_scans = [s.strip() for line in lines for s in line.get("scans", [])]
+        dup_counts = Counter(all_scans)
+        duplicates = [scan for scan, count in dup_counts.items() if count > 1]
+        if duplicates:
+            error_msgs.append(f"Duplicate scan IDs entered: {', '.join(duplicates)}")
+
         if error_msgs:
             st.error("\n".join(error_msgs))
             return
@@ -192,7 +200,7 @@ def run():
                                 warehouse, st.session_state.user
                             )
                         )
-                        # Upsert current_scan_locations
+                        # Upsert current_scan_location
                         cur.execute(
                             """
                             INSERT INTO current_scan_location (
