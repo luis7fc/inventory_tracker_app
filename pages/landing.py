@@ -1,29 +1,39 @@
 # pages/landing.py
 
 import streamlit as st
+import base64
 from db import get_db_cursor
 from datetime import date
 
+def _get_base64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+_LOGO_BASE64 = _get_base64("assets/logo.png")
 
 def run():
 
-  # 1) inject a fixed-position background DIV behind everything
+    # 1) full-screen background DIV with embedded Base64 PNG
     st.markdown(
-        """
+        f"""
         <style>
-          .bg-div {
+          .bg-div {{
             position: fixed;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
-            background: url('/assets/logo.png') no-repeat center center fixed;
+            background: url("data:image/png;base64,{_LOGO_BASE64}") 
+                        no-repeat center center fixed;
             background-size: cover;
             z-index: -1;
-          }
+          }}
+          /* hide the built-in pages nav */
+          [data-testid="stSidebarNav"] {{ display: none; }}
         </style>
         <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
     )
+
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
 
