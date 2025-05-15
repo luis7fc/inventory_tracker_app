@@ -6,31 +6,29 @@ from datetime import date
 
 
 def run():
-    # Display company logo in sidebar (place logo.png under assets/)
+
+    # 1) Hide the multipage nav & inject full-page wallpaper
     st.markdown(
         """
         <style>
+        /* rip out the built-in pages list */
         [data-testid="stSidebarNav"] { display: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    st.sidebar.image("assets/logo.png", use_container_width=True)
-
-    st.markdown(
-        """
-        <style>
-        /* Streamlit root container */
-        .stApp {
-            background: url("/assets/logo.png") no-repeat center center fixed;
+        /* target the root app container behind all widgets */
+        [data-testid="stAppViewContainer"] {
+            background-image: url("assets/logo.png");
             background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    
+
+    # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
+    st.sidebar.image("assets/logo.png", use_container_width=True)
+
     #-Welcome message-
     user = st.session_state.get("user","")
     st.title(f"Welcome, {user}!")
