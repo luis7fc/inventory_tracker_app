@@ -4,12 +4,13 @@ st.set_page_config(page_title="CRS Inventory Tracker", layout="wide")
 from auth import login
 
 # Import existing pages
-import pages.receiving     as receiving
+import pages.receiving              as receiving
 import pages.upload_init_csv        as upload_init_csv
 import pages.reports                as reports
 import pages.users                  as users
 import pages.manage_locations       as manage_locations
 import pages.scan_lookup            as scan_lookup
+import pages.internal_movement      as internal_movement
 
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
@@ -27,6 +28,7 @@ base_pages = [
     "Manage Locations",
     "Scan Lookup",
     "Kitting",
+    "Internal Movement"
 ]
 
 # Admin-only pages
@@ -46,9 +48,9 @@ else:
 page = st.sidebar.selectbox("Navigation", pages)
 
 # Route to the selected page
-if page == "Receiving":
+if page == "Reports":
     receiving.run()
-elif page == "Reports":
+elif page == "Receiving":
     reports.run()
 elif page == "Users":
     users.run()
@@ -62,3 +64,6 @@ elif page == "Pull-tag Upload":
     pulltag_upload.run()
 elif page == "Upload Init CSV":
     upload_init_csv.run()
+elif page == "Internal Movement":
+    internal_movement.run()
+
