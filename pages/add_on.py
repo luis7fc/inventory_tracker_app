@@ -16,23 +16,23 @@ def update_current_inventory(item_code, location, delta_quantity, warehouse):
     with get_db_cursor() as cur:
         # Check if entry exists
         cur.execute(
-            \"\"\"SELECT quantity FROM current_inventory 
-                WHERE item_code = %s AND location = %s AND warehouse = %s\"\"\",
+            """SELECT quantity FROM current_inventory 
+                WHERE item_code = %s AND location = %s AND warehouse = %s""",
             (item_code, location, warehouse)
         )
         row = cur.fetchone()
         if row:
             new_qty = row[0] + delta_quantity
             cur.execute(
-                \"\"\"UPDATE current_inventory 
+                """UPDATE current_inventory 
                     SET quantity = %s 
-                    WHERE item_code = %s AND location = %s AND warehouse = %s\"\"\",
+                    WHERE item_code = %s AND location = %s AND warehouse = %s""",
                 (new_qty, item_code, location, warehouse)
             )
         else:
             cur.execute(
-                \"\"\"INSERT INTO current_inventory (item_code, location, quantity, warehouse)
-                    VALUES (%s, %s, %s, %s)\"\"\",
+                """INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s, %s, %s, %s)""",
                 (item_code, location, delta_quantity, warehouse)
             )
 
