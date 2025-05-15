@@ -14,23 +14,21 @@ _LOGO_BASE64 = _get_base64("assets/logo.png")
 
 def run():
 
-    # 1) Inject full CSS hack immediately
+    # ─────────────── 1) Full-page <img> background + CSS tweaks ───────────────
     st.markdown(
         f"""
         <style>
-        /* ── Hide built-in multipage nav ───────────────────────── */
+        /* Hide built-in multipage nav */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-        /* ── Translucent sidebar ───────────────────────────────── */
+        /* Translucent sidebar & transparent toolbar */
         [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
-
-        /* ── Transparent top toolbar ──────────────────────────── */
         [data-testid="stToolbar"] {{
           background-color: transparent !important;
           box-shadow: none !important;
         }}
 
-        /* ── Make page containers transparent ──────────────────── */
+        /* Make all Streamlit containers transparent */
         html, body,
         [data-testid="stAppViewContainer"],
         .block-container,
@@ -38,18 +36,16 @@ def run():
           background-color: transparent !important;
         }}
 
-        /* ── Full-screen fixed-position background DIV ────────── */
-        .bg-div {{
+        /* Full-screen <img> behind everything */
+        #bg-img {{
           position: fixed;
           top: 0; left: 0;
           width: 100vw; height: 100vh;
-          background: url("data:image/png;base64,{_LOGO_BASE64}") 
-                      no-repeat center top fixed;
-          background-size: contain;
+          object-fit: contain;
           z-index: -1;
         }}
 
-        /* ── Gold/orange text for headings & metrics ─────────── */
+        /* Gold/orange text */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
@@ -57,11 +53,12 @@ def run():
         }}
         </style>
 
-        <!-- the DIV that sits behind everything -->
-        <div class="bg-div"></div>
+        <!-- The actual image tag with inline Base64 data URI -->
+        <img id="bg-img" src="data:image/png;base64,{_LOGO_BASE64}" />
         """,
         unsafe_allow_html=True,
     )
+
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
 
