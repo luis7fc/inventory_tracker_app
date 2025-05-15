@@ -48,9 +48,9 @@ else:
 page = st.sidebar.selectbox("Navigation", pages)
 
 # Route to the selected page
-if page == "Reports":
+if page == "Receiving":
     receiving.run()
-elif page == "Receiving":
+elif page == "Reports":
     reports.run()
 elif page == "Users":
     users.run()
