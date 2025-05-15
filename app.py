@@ -11,6 +11,7 @@ import pages.users                  as users
 import pages.manage_locations       as manage_locations
 import pages.scan_lookup            as scan_lookup
 import pages.internal_movement      as internal_movement
+import pages.landing                as landing
 
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
@@ -28,7 +29,8 @@ base_pages = [
     "Manage Locations",
     "Scan Lookup",
     "Kitting",
-    "Internal Movement"
+    "Internal Movement",
+    "Home"
 ]
 
 # Admin-only pages
@@ -44,26 +46,44 @@ if st.session_state.get('role') == 'admin':
 else:
     pages = base_pages
 
+page_names = pages
+choice = st.sidebar.selectbox("🔍 Navigate", page_names)
+#Map labels to module
+
+page_map = {
+    "Home": landing,
+    "Receiving": receiving,
+    "Internal Movement": internal_movement,
+    "Reports": reports,
+    "Users": users,
+    "Manage Locations": manage_locations,
+    "Scan Lookup": scan_lookup,
+    "Kitting": kitting,
+    "Pull-tag Upload": pulltag_upload,
+    "Upload Init CSV": upload_init_csv,
+}
+page_map[choice].run()
+
 # Sidebar navigation
-page = st.sidebar.selectbox("Navigation", pages)
+#page = st.sidebar.selectbox("Navigation", pages)
 
 # Route to the selected page
-if page == "Receiving":
-    receiving.run()
-elif page == "Reports":
-    reports.run()
-elif page == "Users":
-    users.run()
-elif page == "Manage Locations":
-    manage_locations.run()
-elif page == "Scan Lookup":
-    scan_lookup.run()
-elif page == "Kitting":
-    kitting.run()
-elif page == "Pull-tag Upload":
-    pulltag_upload.run()
-elif page == "Upload Init CSV":
-    upload_init_csv.run()
-elif page == "Internal Movement":
-    internal_movement.run()
+#if page == "Receiving":
+ #   receiving.run()
+#elif page == "Reports":
+#    reports.run()
+#elif page == "Users":
+#    users.run()
+#elif page == "Manage Locations":
+#    manage_locations.run()
+#elif page == "Scan Lookup":
+#    scan_lookup.run()
+#elif page == "Kitting":
+#    kitting.run()
+#elif page == "Pull-tag Upload":
+#    pulltag_upload.run()
+#elif page == "Upload Init CSV":
+#    upload_init_csv.run()
+#elif page == "Internal Movement":
+#    internal_movement.run()
 
