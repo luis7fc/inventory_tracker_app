@@ -76,6 +76,6 @@ elif choice == "Upload Init CSV":
     upload_init_csv.run()
 elif choice == "Internal Movement":
     internal_movement.run()
-elif choice == "Add-On"
+elif choice == "Add-On":
     add_on.run()
 
