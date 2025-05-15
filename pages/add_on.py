@@ -5,13 +5,37 @@ from db import (
     insert_transaction,
     insert_scan_verification,
     update_scan_location,
-    update_current_inventory,
     get_item_metadata,
     insert_pulltag_line,
     validate_scan_for_transaction
 )
 from config import WAREHOUSES
 from auth import require_login
+
+def update_current_inventory(item_code, location, delta_quantity, warehouse):
+    with get_db_cursor() as cur:
+        # Check if entry exists
+        cur.execute(
+            \"\"\"SELECT quantity FROM current_inventory 
+                WHERE item_code = %s AND location = %s AND warehouse = %s\"\"\",
+            (item_code, location, warehouse)
+        )
+        row = cur.fetchone()
+        if row:
+            new_qty = row[0] + delta_quantity
+            cur.execute(
+                \"\"\"UPDATE current_inventory 
+                    SET quantity = %s 
+                    WHERE item_code = %s AND location = %s AND warehouse = %s\"\"\",
+                (new_qty, item_code, location, warehouse)
+            )
+        else:
+            cur.execute(
+                \"\"\"INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s, %s, %s, %s)\"\"\",
+                (item_code, location, delta_quantity, warehouse)
+            )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Require login to access the page
