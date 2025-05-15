@@ -10,6 +10,15 @@ from pages.receiving import SKIP_SCAN_CHECK_LOCATIONS, IRISH_TOASTS
 
 
 def run():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.header("🔀 Internal Movement")
 
     # Initialize or retrieve existing internal movement lines
