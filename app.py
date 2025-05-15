@@ -11,6 +11,7 @@ import pages.manage_locations       as manage_locations
 import pages.scan_lookup            as scan_lookup
 import pages.internal_movement      as internal_movement
 import pages.landing                as landing
+import pages.ad_on                  as add_on
 
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
@@ -30,6 +31,7 @@ base_pages = [
     "Scan Lookup",
     "Kitting",
     "Internal Movement",
+    "Add-On",
 ]
 
 # Admin-only pages
@@ -74,4 +76,6 @@ elif choice == "Upload Init CSV":
     upload_init_csv.run()
 elif choice == "Internal Movement":
     internal_movement.run()
+elif choice == "Add-On"
+    add_on.run()
 
