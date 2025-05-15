@@ -14,6 +14,15 @@ from db import (
 # -----------------------------------------------------------------------------
 
 def run():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("📦 Job Kitting")
 
     # Transaction type + single location input
