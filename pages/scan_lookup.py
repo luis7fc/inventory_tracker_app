@@ -6,6 +6,15 @@ from db import get_db_cursor
 
 
 def run():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.header("🔎 Scan Lookup and Export")
 
     col1, col2 = st.columns(2)
