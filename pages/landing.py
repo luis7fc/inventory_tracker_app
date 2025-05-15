@@ -7,10 +7,23 @@ from datetime import date
 
 def run():
     # Display company logo in sidebar (place logo.png under assets/)
-    st.sidebar.image("assets/logo.png", use_column_width=True)
+    st.sidebar.image("assets/logo.png", use_container_width=True)
 
-    # Welcome message
-    user = st.session_state.get("user", "")
+    st.markdown(
+        f"""
+    <style>
+    [data-testid+"stAppViewContainer"]{{
+        background-image: url("assets/logo.png");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+    }}
+    <style>
+    """,
+        unsafe_allow_html=True,
+    )
+    #-Welcome message-
+    user = st.session_state.get("user","")
     st.title(f"Welcome, {user}!")
 
     # Fetch metrics from DB
