@@ -10,11 +10,10 @@ from db import (
 )
 from config import WAREHOUSES
 
-
 def get_item_metadata(item_code):
     with get_db_cursor() as cur:
         cur.execute(
-            "SELECT cost_code, description, uom FROM items_master WHERE item_code = %s",
+            "SELECT cost_code, item_description, uom FROM items_master WHERE item_code = %s",
             (item_code,)
         )
         row = cur.fetchone()
@@ -22,10 +21,8 @@ def get_item_metadata(item_code):
             return {"cost_code": row[0], "description": row[1], "uom": row[2]}
         return None
 
-
 def update_current_inventory(item_code, location, delta_quantity, warehouse):
     with get_db_cursor() as cur:
-        # Check if entry exists
         cur.execute(
             """SELECT quantity FROM current_inventory 
                 WHERE item_code = %s AND location = %s AND warehouse = %s""",
@@ -47,58 +44,49 @@ def update_current_inventory(item_code, location, delta_quantity, warehouse):
                 (item_code, location, delta_quantity, warehouse)
             )
 
-
-
 def run():
-    # ──────────────────────────────────────────────────────────────────────────────
     st.title("➕ Add-On Pulltag (Job Issue/Return)")
 
-    # --- Select transaction type ---
     transaction_type = st.selectbox("Transaction Type", ["ADD", "RETURNB"])
-
-    # --- Metadata inputs ---
     job_number = st.text_input("Job Number").strip()
     lot_number = st.text_input("Lot Number").strip()
     location = st.text_input("Location").strip()
     warehouse = st.selectbox("Warehouse", WAREHOUSES)
     note = st.text_input("Optional Note")
 
-    # --- Add-on line entry ---
-    item_code = st.text_input("Item Code").strip()
-    quantity = st.number_input("Quantity", min_value=1, step=1)
+    st.markdown("### Add-On Line Items")
+    item_rows = st.data_editor(
+        [{"item_code": "", "quantity": 1}],
+        num_rows="dynamic",
+        use_container_width=True,
+        key="add_on_editor"
+    )
 
-    # --- Scan inputs ---
-    scans = []
-    for i in range(quantity):
-        scan = st.text_input(f"Scan [{i+1}]", key=f"scan_{i}").strip()
-        scans.append(scan)
+    if st.button("Submit All Items"):
+        now = datetime.now()
+        user = st.session_state.get("username", "unknown")
 
-    # ──────────────────────────────────────────────────────────────────────────────
-    if st.button("Submit Add-On Line"):
-        if not all([job_number, lot_number, item_code, location, warehouse]):
-            st.error("Please fill out all required fields.")
-        elif any([s == "" for s in scans]):
-            st.error("All scan fields must be filled.")
-        else:
-            now = datetime.now()
-            user = st.session_state.get("username", "unknown")
+        for row in item_rows:
+            item_code = row["item_code"].strip()
+            quantity = int(row["quantity"])
 
-            # Fetch metadata from items_master
+            if not item_code or quantity <= 0:
+                st.warning("Invalid entry. Skipping blank or zero-quantity rows.")
+                continue
+
             item_meta = get_item_metadata(item_code)
             if not item_meta:
-                st.error("Item not found in items_master.")
-                st.stop()
+                st.warning(f"Item {item_code} not found in items_master. Skipped.")
+                continue
 
             cost_code = item_meta.get("cost_code")
             description = item_meta.get("description")
             uom = item_meta.get("uom")
 
-            # Skip if not a 1:1 scanable item
             if cost_code != item_code:
-                st.warning("Item does not require scan tracking. Skipped.")
-                st.stop()
+                st.info(f"Item {item_code} not scan-tracked. Skipped.")
+                continue
 
-            # Insert new pulltag row
             insert_pulltag_line({
                 "job_number": job_number,
                 "lot_number": lot_number,
@@ -114,7 +102,6 @@ def run():
                 "transaction_type": transaction_type
             })
 
-            # Insert transaction record
             insert_transaction({
                 "transaction_type": transaction_type,
                 "item_code": item_code,
@@ -131,8 +118,12 @@ def run():
                 "warehouse": warehouse
             })
 
-            # Insert scans into scan_verifications
-            for scan in scans:
+            for i in range(quantity):
+                scan = st.text_input(f"Scan {item_code} [{i+1}]", key=f"scan_{item_code}_{i}").strip()
+                if not scan:
+                    st.warning(f"Missing scan {i+1} for {item_code}.")
+                    continue
+
                 if validate_scan_for_transaction(scan, item_code):
                     insert_scan_verification({
                         "item_code": item_code,
@@ -145,12 +136,10 @@ def run():
                         "pulltag_id": None,
                         "scanned_by": user
                     })
-
                     update_scan_location(scan_id=scan, item_code=item_code, location=location, updated_at=now)
                 else:
                     st.warning(f"⚠️ Duplicate or invalid scan: {scan}")
 
-            # Update inventory
             update_current_inventory(item_code, location, quantity if transaction_type == "ADD" else -quantity, warehouse)
 
-            st.success(f"✅ Add-on line submitted successfully for item {item_code}.")
+        st.success("✅ All valid add-on lines submitted successfully.")
