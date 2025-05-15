@@ -3,7 +3,7 @@
 import streamlit as st
 import math
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 from db import get_db_cursor
 from config import WAREHOUSES
 from pages.receiving import SKIP_SCAN_CHECK_LOCATIONS, IRISH_TOASTS
@@ -76,14 +76,39 @@ def run():
         error_msgs = []
         all_scans = []
 
-        # Validation
+        # Calculate total requested per item/from_location
+        request_totals = defaultdict(int)
+        for line in lines:
+            key = (line["item_code"], line["from_location"])
+            request_totals[key] += line["quantity"]
+
+        # Validate aggregated availability
+        for (item, from_loc), total_qty in request_totals.items():
+            with get_db_cursor() as cur:
+                cur.execute(
+                    "SELECT COALESCE(quantity,0) FROM current_inventory "
+                    "WHERE warehouse=%s AND location=%s AND item_code=%s",
+                    (warehouse, from_loc, item)
+                )
+                available = cur.fetchone()[0]
+            if total_qty > available:
+                error_msgs.append(
+                    f"Insufficient stock for item '{item}' in '{from_loc}'. "
+                    f"Requested total {total_qty}, available {available}."
+                )
+
+        # Per-line validation
         for idx, line in enumerate(lines):
-            if not line["item_code"] or line["quantity"] <= 0 \
-               or not line["from_location"] or not line["to_location"]:
+            item = line["item_code"]
+            qty = line["quantity"]
+            from_loc = line["from_location"]
+            to_loc = line["to_location"]
+
+            if not item or qty <= 0 or not from_loc or not to_loc:
                 error_msgs.append(
                     f"Line {idx+1}: missing item code, quantity, from or to location."
                 )
-            if line["from_location"] == line["to_location"]:
+            if from_loc == to_loc:
                 error_msgs.append(
                     f"Line {idx+1}: from and to location must differ."
                 )
@@ -93,17 +118,17 @@ def run():
                 cur.execute(
                     "SELECT COALESCE(SUM(quantity),0) FROM current_inventory "
                     "WHERE warehouse=%s AND location=%s AND item_code!=%s",
-                    (warehouse, line["to_location"], line["item_code"])
+                    (warehouse, to_loc, item)
                 )
                 other_qty = cur.fetchone()[0]
             if other_qty > 0:
                 error_msgs.append(
-                    f"Line {idx+1}: Location '{line['to_location']}' has other items. "
+                    f"Line {idx+1}: Location '{to_loc}' has other items. "
                     "Please reset via Manage Locations tab."
                 )
 
             # Scan-count validation
-            expected = math.ceil(line["quantity"] / line["pallet_qty"])
+            expected = math.ceil(qty / line["pallet_qty"])
             scans = [s.strip() for s in line.get("scans", [])]
             if len(scans) != expected or any(not s for s in scans):
                 error_msgs.append(
@@ -111,20 +136,19 @@ def run():
                 )
 
             # Scan uniqueness checks
-            for sid in scans:
-                all_scans.append(sid)
+            for s in scans:
+                all_scans.append(s)
                 with get_db_cursor() as cur:
                     cur.execute(
                         "SELECT location FROM current_scan_location WHERE scan_id=%s",
-                        (sid,)
+                        (s,)
                     )
                     existing = cur.fetchone()
                 if existing:
                     prev_loc = existing[0]
-                    # Allow if scan at from_location or in skip list
-                    if prev_loc not in SKIP_SCAN_CHECK_LOCATIONS and prev_loc != line["from_location"]:
+                    if prev_loc not in SKIP_SCAN_CHECK_LOCATIONS and prev_loc != from_loc:
                         error_msgs.append(
-                            f"Line {idx+1}: scan '{sid}' already processed at {prev_loc}."
+                            f"Line {idx+1}: scan '{s}' already processed at {prev_loc}."
                         )
 
         # Duplicate scan guard across lines
@@ -145,6 +169,11 @@ def run():
             with get_db_cursor() as cur:
                 total = len(lines)
                 for idx, line in enumerate(lines):
+                    item = line["item_code"]
+                    qty = line["quantity"]
+                    from_loc = line["from_location"]
+                    to_loc = line["to_location"]
+
                     # Insert transaction
                     cur.execute(
                         """
@@ -162,8 +191,8 @@ def run():
                         """,
                         (
                             "Internal Movement",
-                            line["item_code"], line["quantity"],
-                            line["from_location"], line["to_location"],
+                            item, qty,
+                            from_loc, to_loc,
                             st.session_state.user,
                             line.get("note", ""), warehouse
                         )
@@ -174,10 +203,7 @@ def run():
                     cur.execute(
                         "UPDATE current_inventory SET quantity = quantity - %s "
                         "WHERE warehouse=%s AND location=%s AND item_code=%s",
-                        (
-                            line["quantity"], warehouse,
-                            line["from_location"], line["item_code"]
-                        )
+                        (qty, warehouse, from_loc, item)
                     )
                     cur.execute(
                         """
@@ -187,14 +213,11 @@ def run():
                         ON CONFLICT (warehouse, location, item_code)
                         DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity
                         """,
-                        (
-                            warehouse, line["to_location"],
-                            line["item_code"], line["quantity"]
-                        )
+                        (warehouse, to_loc, item, qty)
                     )
 
                     # Insert scan_verifications and upsert current_scan_location
-                    for sid in line["scans"]:
+                    for s in line["scans"]:
                         cur.execute(
                             """
                             INSERT INTO scan_verifications (
@@ -209,12 +232,7 @@ def run():
                                 %s, %s
                             )
                             """,
-                            (
-                                line["item_code"], sid,
-                                line["to_location"],
-                                "Internal Movement",
-                                warehouse, st.session_state.user
-                            )
+                            (item, s, to_loc, "Internal Movement", warehouse, st.session_state.user)
                         )
                         cur.execute(
                             """
@@ -227,7 +245,7 @@ def run():
                                 location   = EXCLUDED.location,
                                 updated_at = EXCLUDED.updated_at
                             """,
-                            (sid, line["item_code"], line["to_location"])
+                            (s, item, to_loc)
                         )
                     progress.progress(int((idx + 1) / total * 100))
 
