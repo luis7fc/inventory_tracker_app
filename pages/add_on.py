@@ -5,12 +5,23 @@ from db import (
     insert_transaction,
     insert_scan_verification,
     update_scan_location,
-    get_item_metadata,
     insert_pulltag_line,
     validate_scan_for_transaction
 )
 from config import WAREHOUSES
 from auth import require_login
+
+def get_item_metadata(item_code):
+    with get_db_cursor() as cur:
+        cur.execute(
+            "SELECT cost_code, description, uom FROM items_master WHERE item_code = %s",
+            (item_code,)
+        )
+        row = cur.fetchone()
+        if row:
+            return {"cost_code": row[0], "description": row[1], "uom": row[2]}
+        return None
+
 
 def update_current_inventory(item_code, location, delta_quantity, warehouse):
     with get_db_cursor() as cur:
