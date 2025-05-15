@@ -132,7 +132,7 @@ def run():
                         )
 
         # Local duplicate scan guard across all lines
-        all_scans = [s.strip() for line in lines for s in line.get("scans", [])] [s.strip() for line in lines for s in line.get("scans", [])]
+        all_scans = all_scans = [s.strip() for line in lines for s in line.get("scans", [])]
         dup_counts = Counter(all_scans)
         duplicates = [scan for scan, count in dup_counts.items() if count > 1]
         if duplicates:
