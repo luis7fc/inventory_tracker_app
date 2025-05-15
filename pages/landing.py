@@ -7,21 +7,30 @@ from datetime import date
 
 def run():
     # Display company logo in sidebar (place logo.png under assets/)
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.sidebar.image("assets/logo.png", use_container_width=True)
 
     st.markdown(
-        f"""
-    <style>
-    [data-testid+"stAppViewContainer"]{{
-        background-image: url("assets/logo.png");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-    }}
-    <style>
-    """,
+        """
+        <style>
+        /* Streamlit root container */
+        .stApp {
+            background: url("/assets/logo.png") no-repeat center center fixed;
+            background-size: cover;
+        }
+        </style>
+        """,
         unsafe_allow_html=True,
     )
+    
     #-Welcome message-
     user = st.session_state.get("user","")
     st.title(f"Welcome, {user}!")
