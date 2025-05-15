@@ -121,7 +121,8 @@ def run():
                     existing = cur.fetchone()
                 if existing:
                     prev_loc = existing[0]
-                    if prev_loc not in SKIP_SCAN_CHECK_LOCATIONS:
+                    # Allow if scan at from_location or in skip list
+                    if prev_loc not in SKIP_SCAN_CHECK_LOCATIONS and prev_loc != line["from_location"]:
                         error_msgs.append(
                             f"Line {idx+1}: scan '{sid}' already processed at {prev_loc}."
                         )
