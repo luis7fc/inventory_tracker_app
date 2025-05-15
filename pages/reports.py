@@ -4,6 +4,15 @@ from db import get_db_cursor
 
 
 def run():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.header("📊 Live Inventory Report")
 
     # 1) build warehouse filter options
