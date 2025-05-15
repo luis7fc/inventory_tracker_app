@@ -57,8 +57,6 @@ def run():
     )
 
 
-    # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
-    st.sidebar.image("assets/logo.png", use_container_width=True)
 
     #-Welcome message-
     user = st.session_state.get("user","")
