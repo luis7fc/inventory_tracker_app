@@ -21,6 +21,15 @@ SKIP_SCAN_CHECK_LOCATIONS = ("VKIT", "SKIT", "FKIT", "IKIT", "GKIT")
 
 
 def run():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.header("📑 Receiving")
 
     # PO-level input
