@@ -11,7 +11,7 @@ import pages.manage_locations       as manage_locations
 import pages.scan_lookup            as scan_lookup
 import pages.internal_movement      as internal_movement
 import pages.landing                as landing
-import pages.ad_on                  as add_on
+import pages.add_on                 as add_on
 
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
