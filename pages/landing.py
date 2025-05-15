@@ -12,22 +12,22 @@ def _get_base64(path: str) -> str:
 _LOGO_BASE64 = _get_base64("assets/logo.png")
 
 def run():
-
-    # 1) full-screen background DIV with embedded Base64 PNG
     st.markdown(
         f"""
         <style>
-          .bg-div {{
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background: url("data:image/png;base64,{_LOGO_BASE64}") 
-                        no-repeat center center fixed;
-            background-size: cover;
-            z-index: -1;
-          }}
-          /* hide the built-in pages nav */
-          [data-testid="stSidebarNav"] {{ display: none; }}
+        .bg-div {{
+          position: fixed;
+          top: 0; left: 0;
+          width: 100vw; height: 100vh;
+          background: url("data:image/png;base64,{_LOGO_BASE64}") 
+                      no-repeat center center fixed;
+          background-size: cover;
+          /* add a light green overlay so we know DIV is there */
+          background-color: rgba(0,255,0,0.2) !important;
+          z-index: 0;
+        }}
+        /* hide multipage nav */
+        [data-testid="stSidebarNav"] {{ display: none; }}
         </style>
         <div class="bg-div"></div>
         """,
