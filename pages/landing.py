@@ -12,27 +12,44 @@ def _get_base64(path: str) -> str:
 _LOGO_BASE64 = _get_base64("assets/logo.png")
 
 def run():
+    # 1) Full-screen background DIV + header transparency + text styling
     st.markdown(
         f"""
         <style>
+        /* ----- background DIV ----- */
         .bg-div {{
           position: fixed;
           top: 0; left: 0;
           width: 100vw; height: 100vh;
           background: url("data:image/png;base64,{_LOGO_BASE64}") 
-                      no-repeat center center fixed;
-          background-size: cover;
-          /* add a light green overlay so we know DIV is there */
-          background-color: rgba(0,255,0,0.2) !important;
-          z-index: 0;
+                      no-repeat center top fixed;
+          background-size: contain;       /* fit the whole logo */
+          z-index: -1;
         }}
-        /* hide multipage nav */
-        [data-testid="stSidebarNav"] {{ display: none; }}
+
+        /* ----- make the top toolbar transparent ----- */
+        [data-testid="stToolbar"] {{
+          background-color: transparent !important;
+          box-shadow: none !important;
+        }}
+
+        /* ----- (optional) sidebar tint ----- */
+        [data-testid="stSidebar"] {{
+          background-color: rgba(0,0,0,0.2) !important;
+        }}
+
+        /* ----- gold/orange text for title & metrics ----- */
+        h1, h2, h3, p,
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricLabel"] {{
+          color: #F6A623 !important;
+        }}
         </style>
         <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
     )
+
 
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
