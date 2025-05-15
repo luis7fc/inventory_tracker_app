@@ -6,6 +6,7 @@ from db import get_db_cursor
 # Manual parsing based on fixed field positions, handling embedded commas and quotes
 
 def parse_to_records(txt_file):
+    
     """
     Parse a TXT file and return a list of dicts for each valid IL row without inserting.
     Fields: warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code
@@ -95,6 +96,15 @@ def parse_and_insert(txt_file):
 
 
 def run():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("📂 Bulk Pull-tag TXT Upload")
 
     if 'processed_files' not in st.session_state:
