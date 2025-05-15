@@ -17,18 +17,32 @@ def run():
     st.markdown(
         f"""
         <style>
+        /* ─── hide the built-in multipage nav ───────────────────────── */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
+        /* ─── translucent sidebar & transparent toolbar ───────────────── */
+        [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
+        [data-testid="stToolbar"] {{ background-color: transparent !important; box-shadow: none !important; }}
+
+        /* ─── clear out any white container backgrounds ─────────────────── */
+        html, body,
+        [data-testid="stAppViewContainer"],
+        .block-container {{
+          background-color: transparent !important;
+        }}
+
+        /* ─── your logo as a full-screen DIV (z-index 0!) ─────────────── */
         .bg-div {{
           position: fixed;
           top: 0; left: 0;
           width: 100vw; height: 100vh;
           background: url("data:image/png;base64,{_LOGO_BASE64}") 
-                      no-repeat center center fixed !important;
+                      no-repeat center top fixed !important;
           background-size: cover !important;
-          z-index: -1;
+          z-index: 0 !important;
         }}
 
+        /* ─── gold/orange text for title & metrics ───────────────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
@@ -36,10 +50,12 @@ def run():
         }}
         </style>
 
+        <!-- DIV behind everything -->
         <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
     )
+
 
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
