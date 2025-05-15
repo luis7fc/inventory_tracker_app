@@ -17,40 +17,30 @@ def run():
     st.markdown(
         f"""
         <style>
-        /* ── 1) Hide the built-in multipage nav ───────── */
+        /* ── 1) Hide built-in multipage nav ─────────────────────── */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-        /* ── 2) Translucent sidebar & transparent toolbar ─ */
-        [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
-        [data-testid="stToolbar"] {{ background-color: transparent !important; box-shadow: none !important; }}
-
-        /* ── 3) Make all Streamlit containers transparent ─ */
-        html, body,
-        [data-testid="stAppViewContainer"],
-        .block-container,
-        .css-18e3th9 {{
-          background-color: transparent !important;
+        /* ── 2) Full-screen hero DIV with your logo (no tint) ───── */
+        .bg-div {{
+          position: fixed;
+          top: 0; left: 0;
+          width: 100vw; height: 100vh;
+          background: url("data:image/png;base64,{_LOGO_BASE64}") 
+                      no-repeat top center fixed !important;
+          background-size: contain !important;
+          z-index: -1;
         }}
 
-        /* ── 4) Gold/orange text for headings & metrics ── */
+        /* ── 3) Gold/orange text for title & metrics ───────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
           color: #F6A623 !important;
         }}
-
-        /* ── 5) Full-screen <img> behind everything ────── */
-        #bg-img {{
-          position: fixed;
-          top: 0; left: 0;
-          width: 100vw; height: 100vh;
-          object-fit: contain;
-          z-index: -1;
-        }}
         </style>
 
-        <!-- The actual image tag -->
-        <img id="bg-img" src="data:image/png;base64,{_LOGO_BASE64}" />
+        <!-- background DIV must come *after* CSS -->
+        <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
     )
