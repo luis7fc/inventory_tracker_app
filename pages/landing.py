@@ -7,25 +7,34 @@ from datetime import date
 
 def run():
 
-    # 1) Hide the multipage nav & inject full-page wallpaper
     st.markdown(
         """
         <style>
-        /* rip out the built-in pages list */
-        [data-testid="stSidebarNav"] { display: none; }
+        /* 1) set the page‐body background */
+        body {
+          background: url("/assets/logo.png") no-repeat center center fixed;
+          background-size: cover;
+        }
 
-        /* target the root app container behind all widgets */
+        /* 2) make the outer Streamlit app container transparent */
         [data-testid="stAppViewContainer"] {
-            background-image: url("assets/logo.png");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
+          background-color: transparent !important;
+        }
+
+        /* 3) make the inner block‐container (where widgets live) transparent */
+        .css-18e3th9, /* generic “block-container” classname */
+        .block-container {
+          background-color: transparent !important;
+        }
+
+        /* 4) hide the built-in pages menu */
+        [data-testid="stSidebarNav"] {
+          display: none;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
 
