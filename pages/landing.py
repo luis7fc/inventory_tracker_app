@@ -15,38 +15,45 @@ _LOGO_BASE64 = _get_base64("assets/logo.png")
 def run():
 
     st.markdown(
-            """
-            <style>
-            /* ── 1) Hide built-in multipage nav ───────────────────────── */
-            [data-testid="stSidebarNav"] { display: none !important; }
+        f"""
+        <style>
+        /* ── 1) Hide the built-in multipage nav ───────── */
+        [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-            /* ── 2) Translucent sidebar & transparent toolbar ────────── */
-            [data-testid="stSidebar"]  { background-color: rgba(0,0,0,0.2) !important; }
-            [data-testid="stToolbar"]  { background-color: transparent !important; box-shadow: none !important; }
+        /* ── 2) Translucent sidebar & transparent toolbar ─ */
+        [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
+        [data-testid="stToolbar"] {{ background-color: transparent !important; box-shadow: none !important; }}
 
-            /* ── 3) Full-page hero via body bg (static assets) ───────── */
-            body {
-              background: url("/assets/logo.png") no-repeat center top fixed !important;
-              background-size: contain !important;
-            }
+        /* ── 3) Make all Streamlit containers transparent ─ */
+        html, body,
+        [data-testid="stAppViewContainer"],
+        .block-container,
+        .css-18e3th9 {{
+          background-color: transparent !important;
+        }}
 
-            /* ── 4) Make all Streamlit containers transparent ────────── */
-            html, body,
-            [data-testid="stAppViewContainer"],
-            .block-container {
-              background-color: transparent !important;
-            }
+        /* ── 4) Gold/orange text for headings & metrics ── */
+        h1, h2, h3, p,
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricLabel"] {{
+          color: #F6A623 !important;
+        }}
 
-            /* ── 5) Gold/orange text for title & metrics ───────────── */
-            h1, h2, h3, p,
-            [data-testid="stMetricValue"],
-            [data-testid="stMetricLabel"] {
-              color: #F6A623 !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        /* ── 5) Full-screen <img> behind everything ────── */
+        #bg-img {{
+          position: fixed;
+          top: 0; left: 0;
+          width: 100vw; height: 100vh;
+          object-fit: contain;
+          z-index: -1;
+        }}
+        </style>
+
+        <!-- The actual image tag -->
+        <img id="bg-img" src="data:image/png;base64,{_LOGO_BASE64}" />
+        """,
+        unsafe_allow_html=True,
+    )
 
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
