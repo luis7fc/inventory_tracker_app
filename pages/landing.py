@@ -7,31 +7,20 @@ from datetime import date
 
 def run():
 
+  # 1) inject a fixed-position background DIV behind everything
     st.markdown(
         """
         <style>
-        /* 1) set the page‐body background */
-        body {
-          background: url("/assets/logo.png") no-repeat center center fixed;
-          background-size: cover;
-        }
-
-        /* 2) make the outer Streamlit app container transparent */
-        [data-testid="stAppViewContainer"] {
-          background-color: transparent !important;
-        }
-
-        /* 3) make the inner block‐container (where widgets live) transparent */
-        .css-18e3th9, /* generic “block-container” classname */
-        .block-container {
-          background-color: transparent !important;
-        }
-
-        /* 4) hide the built-in pages menu */
-        [data-testid="stSidebarNav"] {
-          display: none;
-        }
+          .bg-div {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: url('/assets/logo.png') no-repeat center center fixed;
+            background-size: cover;
+            z-index: -1;
+          }
         </style>
+        <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
     )
