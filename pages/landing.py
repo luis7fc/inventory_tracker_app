@@ -9,48 +9,59 @@ def _get_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
+# load your logo once
 _LOGO_BASE64 = _get_base64("assets/logo.png")
 
 def run():
-    # 1) Full-screen background DIV + header transparency + text styling
+
+    # 1) Inject full CSS hack immediately
     st.markdown(
         f"""
         <style>
-        /* ----- background DIV ----- */
+        /* ── Hide built-in multipage nav ───────────────────────── */
+        [data-testid="stSidebarNav"] {{ display: none !important; }}
+
+        /* ── Translucent sidebar ───────────────────────────────── */
+        [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
+
+        /* ── Transparent top toolbar ──────────────────────────── */
+        [data-testid="stToolbar"] {{
+          background-color: transparent !important;
+          box-shadow: none !important;
+        }}
+
+        /* ── Make page containers transparent ──────────────────── */
+        html, body,
+        [data-testid="stAppViewContainer"],
+        .block-container,
+        .css-18e3th9 {{
+          background-color: transparent !important;
+        }}
+
+        /* ── Full-screen fixed-position background DIV ────────── */
         .bg-div {{
           position: fixed;
           top: 0; left: 0;
           width: 100vw; height: 100vh;
           background: url("data:image/png;base64,{_LOGO_BASE64}") 
                       no-repeat center top fixed;
-          background-size: contain;       /* fit the whole logo */
+          background-size: contain;
           z-index: -1;
         }}
 
-        /* ----- make the top toolbar transparent ----- */
-        [data-testid="stToolbar"] {{
-          background-color: transparent !important;
-          box-shadow: none !important;
-        }}
-
-        /* ----- (optional) sidebar tint ----- */
-        [data-testid="stSidebar"] {{
-          background-color: rgba(0,0,0,0.2) !important;
-        }}
-
-        /* ----- gold/orange text for title & metrics ----- */
+        /* ── Gold/orange text for headings & metrics ─────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
           color: #F6A623 !important;
         }}
         </style>
+
+        <!-- the DIV that sits behind everything -->
         <div class="bg-div"></div>
         """,
         unsafe_allow_html=True,
     )
-
-
     # 2) Sidebar logo (optional—you can remove this now if you just want wallpaper)
     st.sidebar.image("assets/logo.png", use_container_width=True)
 
