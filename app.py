@@ -1,6 +1,5 @@
 import streamlit as st
 st.set_page_config(page_title="CRS Inventory Tracker", layout="wide")
-
 from auth import login
 
 # Import existing pages
@@ -23,6 +22,7 @@ login()
 
 # --- Define Tabs ---
 base_pages = [
+    "Home",
     "Receiving",
     "Reports",
     "Users",
@@ -30,7 +30,6 @@ base_pages = [
     "Scan Lookup",
     "Kitting",
     "Internal Movement",
-    "Home"
 ]
 
 # Admin-only pages
@@ -47,6 +46,8 @@ else:
     pages = base_pages
 
 page_names = pages
+
+st.sidebar.image("assets/logob.png", use_container_width=True)
 choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=page_names.index("Home"))
 #Map labels to module
 
