@@ -68,7 +68,7 @@ def run():
                 continue
 
             # Add to pulltags
-            insert_pulltag_line({
+            insert_pulltag_line(**{
                 "job_number": job,
                 "lot_number": lot,
                 "item_code": code,
