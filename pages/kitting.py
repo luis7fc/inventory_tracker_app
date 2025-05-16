@@ -86,7 +86,7 @@ def run():
                 )
                 row = cur.fetchone()
                 if row:
-                    insert_pulltag_line(cur, job, lot, new_code, new_qty)
+                    insert_pulltag_line(cur, job, lot, new_code, new_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
                     inserted = True
             if not inserted:
                 st.error(f"`{new_code}` not found in items_master!")
@@ -140,7 +140,7 @@ def run():
                 # INSERT any brand-new item_codes
                 for code, qty in kits.items():
                     if code not in existing and qty > 0:
-                        insert_pulltag_line(cur, job, lot, code, qty)
+                        insert_pulltag_line(cur, job, lot, code, qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return" )
 
                 # UPDATE changed quantities, DELETE zeros
                 for r in rows:
