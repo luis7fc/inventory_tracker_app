@@ -298,15 +298,21 @@ def run():
             )
 
             # only accept scan-tracked items
-            with get_db_cursor() as cur:
+         with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT item_code FROM items_master WHERE item_code = %s AND cost_code = item_code",
+                    "SELECT item_code FROM items_master "
+                    "WHERE item_code = %s AND cost_code = item_code",
                     (code,),
                 )
-                if not cur.fetchone():
-                    st.info(f"ℹ️ Item {code} not scan-tracked. Skipped.")
-                    continue
-                insert_pulltag_line(cur, job, lot, code, qty, transaction_type, warehouse)
+                scan_tracked = bool(cur.fetchone())
+
+                # auto-negate for RETURNB
+                qty_store = -abs(qty) if transaction_type == "RETURNB" else qty
+                insert_pulltag_line(cur, job, lot, code, qty_store, transaction_type, warehouse)
+
+            if scan_tracked:
+                scans_needed.setdefault(code, {}).setdefault((job, lot), 0)
+                scans_needed[code][(job, lot)] += qty
 
             job_lot_queue.append((job, lot))
             scans_needed.setdefault(code, {}).setdefault((job, lot), 0)
@@ -315,9 +321,10 @@ def run():
                 {"Job": job, "Lot": lot, "Item": code, "Qty": qty, "Type": transaction_type}
             )
 
-        if not scans_needed:
-            st.warning("No valid adjustments submitted.")
-            st.stop()
+        if not scans_needed:                      # nothing needs scanning
+            st.success("✅ Adjustments posted—no scans required.")
+            st.session_state.adjustments.clear()
+            return
 
         # persist for second stage
         st.session_state.update(
