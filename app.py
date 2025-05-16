@@ -21,6 +21,8 @@ import pages.kitting                as kitting
 
 # --- Run Login ---
 login()
+if not st.session_state.get("user"):
+    st.stop()
 
 # --- Define Tabs ---
 base_pages = [
