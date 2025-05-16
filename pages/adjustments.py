@@ -231,7 +231,31 @@ def run():
 
         submitted = st.form_submit_button("Finalize Adjustments")
 
-    if submitted:
+        if submitted:
+            if not location:
+                st.error("Please enter a Location before finalizing.")
+            else:
+                sb = st.session_state.get("username", "unknown")
+                progress_bar = st.progress(0)
+
+                with st.spinner("Processing adjustments..."):
+                    def update_progress(pct: int):
+                        progress_bar.progress(pct)
+
+                    finalize_add(
+                        scans_needed,
+                        scan_inputs,
+                        job_lot_queue,
+                        from_location=location if transaction_type == "ADD" else None,
+                        to_location=location if transaction_type == "RETURNB" else None,
+                        scanned_by=sb,
+                        progress_callback=update_progress,
+                        warehouse=warehouse
+                    )
+
+                st.success("✅ Adjustments finalized and inventory updated.")
+                st.session_state.adjustments.clear()
+                st.session_state.finalize_ready = False
                 if not location:
                     st.error("Please enter a Location before finalizing.")
                 else:
