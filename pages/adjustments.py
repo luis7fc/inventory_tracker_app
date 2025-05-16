@@ -68,20 +68,15 @@ def run():
                 continue
 
             # Add to pulltags
-            insert_pulltag_line(**{
-                "job_number": job,
-                "lot_number": lot,
-                "item_code": code,
-                "cost_code": code,
-                "description": "",  # will be filled by SQL insert from items_master
-                "quantity": qty,
-                "status": "complete",
-                "uploaded_at": now,
-                "last_updated": now,
-                "warehouse": warehouse,
-                "uom": "",  # will be filled by SQL insert from items_master
-                "transaction_type": transaction_type
-            })
+            insert_pulltag_line(
+                cur,
+                job_number=job,
+                lot_number=lot,
+                item_code=code,
+                quantity=qty,
+                transaction_type=transaction_type
+            )
+
 
             # Track scans
             job_lot_queue.append((job, lot))
