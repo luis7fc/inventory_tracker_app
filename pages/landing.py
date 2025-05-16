@@ -5,65 +5,7 @@ import base64
 from db import get_db_cursor
 from datetime import date
 
-def _get_base64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-# load your logo once
-_LOGO_BASE64 = _get_base64("assets/logo.png")
-
 def run():
-
-    st.markdown(
-        f"""
-        <style>
-        /* ── hide the built-in multipage nav ───────────────────────── */
-        [data-testid="stSidebarNav"] {{ display: none !important; }}
-
-        /* ── translucent sidebar & transparent toolbar ──────────────── */
-        [data-testid="stSidebar"] {{ background-color: rgba(0,0,0,0.2) !important; }}
-        [data-testid="stToolbar"] {{
-          background-color: transparent !important;
-          box-shadow: none !important;
-        }}
-
-        /* ── transparent top header ─────────────────────────────────── */
-        [data-testid="stHeader"] {{
-          background-color: transparent !important;
-          box-shadow: none !important;
-        }}
-
-        /* ── clear out any white container backgrounds ───────────────── */
-        html, body,
-        [data-testid="stAppViewContainer"],
-        .block-container {{
-          background-color: transparent !important;
-        }}
-
-        /* ── your logo as a full-screen DIV (z-index 0!) ───────────── */
-        .bg-div {{
-          position: fixed;
-          top: 0; left: 0;
-          width: 100vw; height: 100vh;
-          background: url("data:image/png;base64,{_LOGO_BASE64}") 
-                      no-repeat center top fixed !important;
-          background-size: cover !important;
-          z-index: 0 !important;
-        }}
-
-        /* ── gold/orange text for title & metrics ─────────────────── */
-        h1, h2, h3, p,
-        [data-testid="stMetricValue"],
-        [data-testid="stMetricLabel"] {{
-          color: #F6A623 !important;
-        }}
-        </style>
-
-        <!-- DIV behind everything -->
-        <div class="bg-div"></div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     #-Welcome message-
     user = st.session_state.get("user","")
