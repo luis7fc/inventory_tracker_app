@@ -19,8 +19,98 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity, transa
     cur.execute(sql, (job_number, lot_number, quantity, status, transaction_type, warehouse, item_code))
     return cur.fetchone()[0]
 
-# Finalize ADD/RETURNB logic
-# (... finalize_add definition remains unchanged ...)
+# Enhanced finalize_add with scan validation logic and pallet logic
+def finalize_add(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None, scanned_by=None, progress_callback=None, warehouse=None):
+    if not warehouse:
+        raise ValueError("Warehouse was not provided to finalize_add.")
+
+    total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
+    done = 0
+
+    with get_db_cursor() as cur:
+        for item_code, lots in scans_needed.items():
+            total_needed = sum(lots.values())
+
+            for (job, lot), need in lots.items():
+                assign = min(need, total_needed)
+                if assign == 0:
+                    continue
+
+                trans_type = "Return" if to_location and not from_location else "Job Issue"
+                loc_value = to_location or from_location
+                sb = scanned_by
+
+                cur.execute(f"""
+                    INSERT INTO transactions
+                        (transaction_type, date, warehouse, {"to_location" if trans_type == "Return" else "from_location"},
+                         job_number, lot_number, item_code, quantity, user_id)
+                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
+                """, (trans_type, warehouse, loc_value, job, lot, item_code, assign, sb))
+
+                pallet_id = scan_inputs.get(f"pallet_{item_code}_{job}_{lot}", "").strip()
+                pallet_qty = int(scan_inputs.get(f"pallet_qty_{item_code}_{job}_{lot}", "1"))
+
+                if pallet_id and pallet_qty > 1 and trans_type == "Job Issue":
+                    cur.execute("SELECT location FROM current_scan_location WHERE scan_id = %s", (pallet_id,))
+                    found = cur.fetchone()
+                    if not found:
+                        raise Exception(f"Pallet ID {pallet_id} not found in current_scan_location.")
+                    if found[0] != from_location:
+                        raise Exception(f"Pallet ID {pallet_id} is currently in {found[0]}, not {from_location}.")
+                    cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (pallet_id,))
+                    cur.execute("""
+                        INSERT INTO scan_verifications
+                          (item_code, scan_id, job_number, lot_number,
+                           scan_time, location, transaction_type, warehouse, scanned_by)
+                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
+                    """, (item_code, pallet_id, job, lot, from_location, trans_type, warehouse, sb))
+                    done += 1
+                else:
+                    for idx in range(1, assign + 1):
+                        sid = scan_inputs.get(f"scan_{item_code}_{idx}", "").strip()
+                        if not sid:
+                            continue
+
+                        cur.execute("SELECT location FROM current_scan_location WHERE scan_id = %s", (sid,))
+                        existing = cur.fetchone()
+
+                        if trans_type == "Return":
+                            if existing:
+                                raise Exception(f"Scan {sid} already exists in {existing[0]}.")
+                            cur.execute("""
+                                INSERT INTO current_scan_location (scan_id, item_code, location)
+                                VALUES (%s, %s, %s)
+                                ON CONFLICT (scan_id) DO UPDATE SET location = EXCLUDED.location
+                            """, (sid, item_code, to_location))
+                        else:
+                            if existing and existing[0] != from_location:
+                                raise Exception(f"Scan {sid} located in {existing[0]}, expected {from_location}. Missing internal movement?")
+                            cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (sid,))
+
+                        cur.execute("""
+                            INSERT INTO scan_verifications
+                              (item_code, scan_id, job_number, lot_number,
+                               scan_time, location, transaction_type, warehouse, scanned_by)
+                            VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
+                        """, (item_code, sid, job, lot, loc_value, trans_type, warehouse, sb))
+
+                        done += 1
+                        if progress_callback:
+                            pct = int(done / total_scans * 100)
+                            progress_callback(pct)
+
+                delta = assign if trans_type == "Return" else -assign
+                cur.execute("""
+                    INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (item_code, location, warehouse) DO UPDATE
+                        SET quantity = current_inventory.quantity + EXCLUDED.quantity
+                """, (item_code, loc_value, delta, warehouse))
+
+                total_needed -= assign
+                if total_needed <= 0:
+                    break
+
 
 # Main App
 
