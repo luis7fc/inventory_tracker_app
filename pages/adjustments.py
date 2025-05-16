@@ -297,8 +297,8 @@ def run():
                 row["quantity"],
             )
 
-            # only accept scan-tracked items
-         with get_db_cursor() as cur:
+            # ── DB look-ups & pull-tag insert ────────────────────────────
+            with get_db_cursor() as cur:          # ←--- INDENT **8 spaces** (same as the comment)
                 cur.execute(
                     "SELECT item_code FROM items_master "
                     "WHERE item_code = %s AND cost_code = item_code",
@@ -306,22 +306,29 @@ def run():
                 )
                 scan_tracked = bool(cur.fetchone())
 
-                # auto-negate for RETURNB
                 qty_store = -abs(qty) if transaction_type == "RETURNB" else qty
-                insert_pulltag_line(cur, job, lot, code, qty_store, transaction_type, warehouse)
+                insert_pulltag_line(
+                    cur, job, lot, code, qty_store, transaction_type, warehouse
+                )
 
+            # ── build scan checklist only if tracking required ───────────
             if scan_tracked:
                 scans_needed.setdefault(code, {}).setdefault((job, lot), 0)
                 scans_needed[code][(job, lot)] += qty
 
             job_lot_queue.append((job, lot))
-            scans_needed.setdefault(code, {}).setdefault((job, lot), 0)
-            scans_needed[code][(job, lot)] += qty
             confirmed_rows.append(
-                {"Job": job, "Lot": lot, "Item": code, "Qty": qty, "Type": transaction_type}
+                {
+                    "Job":  job,
+                    "Lot":  lot,
+                    "Item": code,
+                    "Qty":  qty,
+                    "Type": transaction_type,
+                }
             )
 
-        if not scans_needed:                      # nothing needs scanning
+        # ── nothing to scan? skip straight to “done” ──────────────────────
+        if not scans_needed:
             st.success("✅ Adjustments posted—no scans required.")
             st.session_state.adjustments.clear()
             return
