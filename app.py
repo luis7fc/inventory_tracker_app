@@ -18,11 +18,61 @@ import pages.adjustments            as adjustments
 import pages.pulltag_upload         as pulltag_upload
 import pages.kitting                as kitting
 # import pages.admin_bulk_export    as admin_bulk_export
+# ──────────────────────────────────────────────────────────────────────────────
+#  Global background helper
+# ──────────────────────────────────────────────────────────────────────────────
+import base64, pathlib,
+
+def add_background(png_file: str) -> None:
+    """Inject a full-screen background from a local PNG file."""
+    # Resolve path relative to app.py
+    img_path = pathlib.Path(__file__).with_suffix("").parent / png_file
+    with open(img_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+
+    st.markdown(
+        f"""
+        <style>
+        /* ── hide Streamlit’s built-in sidebar nav ─────────────────── */
+        [data-testid="stSidebarNav"] {{ display: none !important; }}
+
+        /* ── translucent sidebar & clear toolbars ─────────────────── */
+        [data-testid="stSidebar"]  {{ background: rgba(0,0,0,0.2) !important; }}
+        [data-testid="stToolbar"],
+        [data-testid="stHeader"]  {{ background: transparent !important; box-shadow:none !important; }}
+
+        /* ── remove default white containers ──────────────────────── */
+        html, body,
+        [data-testid="stAppViewContainer"],
+        .block-container {{
+            background: transparent !important;
+        }}
+
+        /* ── full-viewport background div  ─────────────────────────── */
+        .bg-div {{
+            position: fixed; inset: 0;
+            background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
+            background-size: cover !important;
+            z-index: 0 !important;
+        }}
+
+        /* ── optional gold text theme  ─────────────────────────────── */
+        h1, h2, h3, p, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {{
+            color: #F6A623 !important;
+        }}
+        </style>
+
+        <div class="bg-div"></div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # --- Run Login ---
 login()
 if not st.session_state.get("user"):
     st.stop()
+
+add_background("assets/logo.png")
 
 # --- Define Tabs ---
 base_pages = [
