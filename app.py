@@ -11,6 +11,8 @@ import pages.manage_locations       as manage_locations
 import pages.scan_lookup            as scan_lookup
 import pages.internal_movement      as internal_movement
 import pages.landing                as landing
+import pages.adjustments            as adjustments
+
 
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
@@ -30,6 +32,7 @@ base_pages = [
     "Scan Lookup",
     "Kitting",
     "Internal Movement",
+    "Adjustments",
 ]
 
 # Admin-only pages
@@ -46,6 +49,7 @@ else:
     pages = base_pages
 
 page_names = pages
+
 
 st.sidebar.image("assets/logoc.png", use_container_width=True)
 choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=page_names.index("Home"))
@@ -74,4 +78,5 @@ elif choice == "Upload Init CSV":
     upload_init_csv.run()
 elif choice == "Internal Movement":
     internal_movement.run()
-
+elif choice == "Adjustments":
+    adjustments.run()
