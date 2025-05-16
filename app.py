@@ -21,7 +21,7 @@ import pages.kitting                as kitting
 # ──────────────────────────────────────────────────────────────────────────────
 #  Global background helper
 # ──────────────────────────────────────────────────────────────────────────────
-import base64, pathlib,
+import base64, pathlib
 
 def add_background(png_file: str) -> None:
     """Inject a full-screen background from a local PNG file."""
