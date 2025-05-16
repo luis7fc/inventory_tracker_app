@@ -204,17 +204,22 @@ def run():
             st.dataframe(confirmed_rows, use_container_width=True)
 
             st.markdown("### 🔍 Scan Required Items")
-            scan_inputs = {}
-            for item_code, lots in scans_needed.items():
-                for (job, lot), qty in lots.items():
-                    st.write(f"**{item_code} — Job: {job}, Lot: {lot} — Total Scans: {qty}**")
-                    scan_inputs[f"pallet_{item_code}_{job}_{lot}"] = st.text_input(f"Optional Pallet ID for {item_code} (Job {job}, Lot {lot})")
-                    scan_inputs[f"pallet_qty_{item_code}_{job}_{lot}"] = st.number_input(f"Pallet Quantity (or 1 for individual scans)", min_value=1, value=1, step=1, key=f"pallet_qty_{item_code}_{job}_{lot}")
-                    for i in range(1, qty + 1):
-                        key = f"scan_{item_code}_{i}"
-                        scan_inputs[key] = st.text_input(f"Scan {i} for {item_code}", key=key)
+with st.form("scan_form"):
+    scan_inputs = {}
+    for item_code, lots in scans_needed.items():
+        for (job, lot), qty in lots.items():
+            st.write(f"**{item_code} — Job: {job}, Lot: {lot} — Total Scans: {qty}**")
+            scan_inputs[f"pallet_{item_code}_{job}_{lot}"] = st.text_input(f"Optional Pallet ID for {item_code} (Job {job}, Lot {lot})", key=f"pallet_{item_code}_{job}_{lot}")
+            scan_inputs[f"pallet_qty_{item_code}_{job}_{lot}"] = st.number_input(
+                f"Pallet Quantity (or 1 for individual scans)", min_value=1, value=1, step=1, key=f"pallet_qty_{item_code}_{job}_{lot}"
+            )
+            for i in range(1, qty + 1):
+                key = f"scan_{item_code}_{i}"
+                scan_inputs[key] = st.text_input(f"Scan {i} for {item_code}", key=key)
 
-            if st.button("Finalize Adjustments"):
+    submitted = st.form_submit_button("Finalize Adjustments")
+
+if submitted:
                 if not location:
                     st.error("Please enter a Location before finalizing.")
                 else:
