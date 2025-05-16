@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime
 from db import (
     get_db_cursor,
-    get_item_metadata,
     insert_pulltag_line,
     finalize_scans
 )
@@ -44,32 +43,33 @@ if st.button("Submit Adjustments"):
             st.warning(f"❌ Invalid entry skipped: {row}")
             continue
 
-        meta = get_item_metadata(code)
-        if not meta:
-            st.warning(f"⚠️ Item not found in items_master: {code}")
-            continue
+        with get_db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT item_code FROM items_master 
+                WHERE item_code = %s AND cost_code = item_code
+                """,
+                (code,)
+            )
+            row = cur.fetchone()
 
-        cost_code = meta.get("cost_code")
-        if cost_code != code:
-            st.info(f"ℹ️ Item {code} is not scan-tracked. Skipped.")
+        if not row:
+            st.info(f"ℹ️ Item {code} is not scan-tracked or not found. Skipped.")
             continue
-
-        desc = meta.get("description")
-        uom = meta.get("uom")
 
         # Add to pulltags
         insert_pulltag_line({
             "job_number": job,
             "lot_number": lot,
             "item_code": code,
-            "cost_code": cost_code,
-            "description": desc,
+            "cost_code": code,
+            "description": "",  # will be filled by SQL insert from items_master
             "quantity": qty,
             "status": "complete",
             "uploaded_at": now,
             "last_updated": now,
             "warehouse": warehouse,
-            "uom": uom,
+            "uom": "",  # will be filled by SQL insert from items_master
             "transaction_type": transaction_type
         })
 
