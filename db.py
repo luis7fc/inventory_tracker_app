@@ -66,7 +66,6 @@ def insert_transaction(transaction_data):
                 transaction_type, item_code, quantity, date,
                 job_number, lot_number, po_number,
                 from_location, to_location,
-                from_warehouse, to_warehouse,
                 user_id, bypassed_warning, note, warehouse
             )
             VALUES (%s, %s, %s, NOW(),
@@ -84,8 +83,6 @@ def insert_transaction(transaction_data):
                 transaction_data.get("po_number"),
                 transaction_data.get("from_location"),
                 transaction_data.get("to_location"),
-                transaction_data.get("from_warehouse"),
-                transaction_data.get("to_warehouse"),
                 transaction_data.get("user_id"),
                 transaction_data.get("bypassed_warning", False),
                 transaction_data.get("note", ""),
@@ -419,16 +416,14 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 
 # In db.py
 
-def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
+def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity, transaction_type="Job Issue"):
     """
-    cur: psycopg2 cursor from get_db_cursor()
-    Inserts a new line into pulltags table using items_master metadata.
-    Returns the new row’s id via RETURNING.
+    Inserts a new pulltag row using items_master metadata and specified transaction type.
     """
     sql = """
     INSERT INTO pulltags
       (job_number, lot_number, item_code, quantity,
-       description, cost_code, uom, status)
+       description, cost_code, uom, status, transaction_type)
     SELECT
       %s,        -- job_number
       %s,        -- lot_number
@@ -437,13 +432,13 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity):
       item_description,
       cost_code,
       uom,
-      'pending'
+      'pending',
+      %s         -- transaction_type
     FROM items_master
     WHERE item_code = %s
     RETURNING id
     """
-    # execute and fetch the new id in one go
-    cur.execute(sql, (job_number, lot_number, quantity, item_code))
+    cur.execute(sql, (job_number, lot_number, quantity, transaction_type, item_code))
     return cur.fetchone()[0]
 
 
