@@ -3,6 +3,7 @@ from datetime import datetime
 from db import get_db_cursor, insert_pulltag_line, finalize_scans
 from config import WAREHOUSES
 
+
 def run():
     st.markdown("""
         <style>
@@ -33,18 +34,32 @@ def run():
 
         if st.button("Add to List"):
             if all([job.strip(), lot.strip(), code.strip(), qty > 0]):
+                with get_db_cursor() as cur:
+                    cur.execute("SELECT item_description FROM items_master WHERE item_code = %s", (code.strip(),))
+                    result = cur.fetchone()
+                    desc = result[0] if result else "(Unknown Item)"
                 st.session_state.adjustments.append({
                     "job_number": job.strip(),
                     "lot_number": lot.strip(),
                     "item_code": code.strip(),
-                    "quantity": int(qty)
+                    "quantity": int(qty),
+                    "description": desc
                 })
             else:
                 st.warning("Please complete all fields before adding.")
 
     if st.session_state.adjustments:
         st.markdown("### 📋 Adjustments Preview")
-        st.dataframe(st.session_state.adjustments, use_container_width=True)
+        for i, row in enumerate(st.session_state.adjustments):
+            cols = st.columns([3, 3, 3, 2, 3, 1])
+            cols[0].markdown(f"**Job:** {row['job_number']}")
+            cols[1].markdown(f"**Lot:** {row['lot_number']}")
+            cols[2].markdown(f"**Item:** {row['item_code']}")
+            cols[3].markdown(f"**Qty:** {row['quantity']}")
+            cols[4].markdown(f"**Desc:** {row['description']}")
+            if cols[5].button("❌", key=f"remove_{i}"):
+                st.session_state.adjustments.pop(i)
+                st.experimental_rerun()
 
         if st.button("Submit Adjustments"):
             now = datetime.now()
