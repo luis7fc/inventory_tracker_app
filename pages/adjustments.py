@@ -2,13 +2,9 @@ import streamlit as st
 from datetime import datetime
 from db import (
     get_db_cursor,
-    insert_transaction,
-    insert_scan_verification,
-    update_scan_location,
+    get_item_metadata,
     insert_pulltag_line,
-    validate_scan_for_transaction,
-    update_current_inventory,
-    get_item_metadata
+    finalize_scans
 )
 from config import WAREHOUSES
 
@@ -25,7 +21,7 @@ location = st.text_input("Location", placeholder="e.g., STAGE-A")
 note = st.text_input("Transaction Note (Optional)")
 
 st.markdown("### 📋 Add Job/Lot Adjustments")
-rows = st.data_editor(
+adjustment_rows = st.data_editor(
     [{"job_number": "", "lot_number": "", "item_code": "", "quantity": 1}],
     num_rows="dynamic",
     use_container_width=True,
@@ -35,8 +31,10 @@ rows = st.data_editor(
 if st.button("Submit Adjustments"):
     now = datetime.now()
     user = st.session_state.get("username", "unknown")
+    scans_needed = {}
+    job_lot_queue = []
 
-    for row in rows:
+    for row in adjustment_rows:
         job = row["job_number"].strip()
         lot = row["lot_number"].strip()
         code = row["item_code"].strip()
@@ -59,6 +57,7 @@ if st.button("Submit Adjustments"):
         desc = meta.get("description")
         uom = meta.get("uom")
 
+        # Add to pulltags
         insert_pulltag_line({
             "job_number": job,
             "lot_number": lot,
@@ -74,44 +73,44 @@ if st.button("Submit Adjustments"):
             "transaction_type": transaction_type
         })
 
-        insert_transaction({
-            "transaction_type": transaction_type,
-            "item_code": code,
-            "quantity": qty,
-            "date": now,
-            "job_number": job,
-            "lot_number": lot,
-            "po_number": None,
-            "from_location": location if transaction_type == "ADD" else None,
-            "to_location": location if transaction_type == "RETURNB" else None,
-            "user_id": user,
-            "bypassed_warning": False,
-            "note": note,
-            "warehouse": warehouse
-        })
+        # Track scans
+        job_lot_queue.append((job, lot))
+        scans_needed.setdefault(code, {}).setdefault((job, lot), 0)
+        scans_needed[code][(job, lot)] += qty
 
-        for i in range(qty):
-            scan = st.text_input(f"Scan {code} [{i+1}]", key=f"scan_{code}_{i}").strip()
-            if not scan:
-                st.warning(f"Missing scan {i+1} for {code}. Skipping.")
-                continue
+    if not scans_needed:
+        st.warning("No valid adjustments to process.")
+        st.stop()
 
-            if validate_scan_for_transaction(scan, code):
-                insert_scan_verification({
-                    "item_code": code,
-                    "job_number": job,
-                    "lot_number": lot,
-                    "scan_time": now,
-                    "location": location,
-                    "transaction_type": transaction_type,
-                    "warehouse": warehouse,
-                    "pulltag_id": None,
-                    "scanned_by": user
-                })
-                update_scan_location(scan_id=scan, item_code=code, location=location, updated_at=now)
-            else:
-                st.warning(f"⚠️ Duplicate or invalid scan: {scan}")
+    st.markdown("---")
+    st.subheader("🔍 Scan Collection")
+    scan_inputs = {}
+    for item_code, lots in scans_needed.items():
+        total = sum(lots.values())
+        st.write(f"**{item_code}** — Total Scans: {total}")
+        for i in range(1, total + 1):
+            key = f"scan_{item_code}_{i}"
+            scan_inputs[key] = st.text_input(f"Scan {i}", key=key)
 
-        update_current_inventory(code, location, qty if transaction_type == "ADD" else -qty, warehouse)
+    if st.button("Finalize Adjustments"):
+        if not location:
+            st.error("Please enter a Location before finalizing.")
+        else:
+            sb = st.session_state.get("username", "unknown")
+            progress_bar = st.progress(0)
 
-    st.success("✅ All valid adjustment rows submitted.")
+            with st.spinner("Processing adjustments..."):
+                def update_progress(pct: int):
+                    progress_bar.progress(pct)
+
+                finalize_scans(
+                    scans_needed,
+                    scan_inputs,
+                    job_lot_queue,
+                    from_location=location if transaction_type == "ADD" else None,
+                    to_location=location if transaction_type == "RETURNB" else None,
+                    scanned_by=sb,
+                    progress_callback=update_progress
+                )
+
+            st.success("✅ Adjustments finalized and inventory updated.")
