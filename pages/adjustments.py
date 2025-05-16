@@ -281,7 +281,7 @@ def run():
             cols[4].markdown(f"**Desc:** {row['description']}")
             if cols[5].button("❌", key=f"remove_{i}"):
                 adjustments.pop(i)
-                st.experimental_rerun()
+                st.rerun()
 
     # ── submit adjustments ─────────────────────────────────────────────────
     if adjustments and st.button("Submit Adjustments"):
@@ -328,7 +328,7 @@ def run():
                 "finalize_ready": True,
             }
         )
-        st.experimental_rerun()
+        st.rerun()
 
     # ───────────────────────────────────────────────────────────────────
     # 2-step: SCAN ENTRY + FINALISE
