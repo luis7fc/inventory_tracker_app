@@ -7,10 +7,14 @@ from db import (
 )
 from config import WAREHOUSES
 
+if "username" not in st.session_state:
+    st.warning("🔐 Please log in to access this page.")
+    st.stop()
+
 st.title("🛠️ Post-Kitting Adjustments")
 
 st.markdown("""
-Use this tool to add or remove material **after original kitting is complete**. 
+Use this tool to add or remove material **before OR after original kitting is complete**. 
 Supports multiple job/lot entries at once.
 """)
 
