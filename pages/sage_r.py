@@ -17,6 +17,10 @@ from db import get_db_cursor  # shared DB helper
 # ─────────────────────────────────────────────────────────────────────────────
 # Session‑state initialiser
 # ─────────────────────────────────────────────────────────────────────────────
+def get_distinct_statuses() -> list[str]:
+    with get_db_cursor() as cur:
+        cur.execute("SELECT DISTINCT status FROM pulltags ORDER BY status;")
+        return [r[0] for r in cur.fetchall()]
 
 def _init_session_state() -> None:
     """Ensure required session-state keys exist."""
@@ -37,9 +41,11 @@ def _init_session_state() -> None:
 # DB helpers
 # ─────────────────────────────────────────────────────────────────────────────
 # ── DB query ─────────────────────────────────────────────────────────
-def query_pulltags(job_lot_pairs: List[Tuple[str, str]],
-                   tx_types: List[str],
-                   statuses: List[str]) -> pd.DataFrame:
+def query_pulltags(
+    job_lot_pairs: List[Tuple[str, str]],
+    tx_types: List[str],
+    statuses: List[str]),
+) -> pd.DataFrame:
 
     if not job_lot_pairs:
         return pd.DataFrame()
@@ -132,10 +138,16 @@ def run():
 
     # 2) Optional filters -------------------------------------------------
     default_tx = ["Job Issue", "ADD", "RETURNB", "Return"]
-    tx_types   = st.multiselect("Transaction type(s)", default_tx, default=default_tx)
+    tx_types   = st.multiselect("Transaction Types", default_tx, default=default_tx)
 
-    default_st = ["kitted", "ADD", "RETURNB"]   # pick whatever makes sense
-    statuses   = st.multiselect("Status filter", default_st, default=default_st)
+    # dynamic status list ────────────────────────────────────────────────
+    all_statuses = get_distinct_statuses()                # helper defined above run()
+    # If user unticks everything we’ll treat that as “show all”
+    statuses = st.multiselect("Status filter",
+                              all_statuses,
+                              default=all_statuses)
+    if not statuses:      # show-all fallback
+        statuses = all_statuses
 
     st.markdown("---")
 
