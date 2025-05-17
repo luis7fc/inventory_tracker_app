@@ -8,7 +8,7 @@ import pages.upload_init_csv        as upload_init_csv
 import pages.reports                as reports
 import pages.users                  as users
 import pages.manage_locations       as manage_locations
-import pages.scan_lookup            as scan_lookup
+import pages.sage_r                 as sage_r
 import pages.internal_movement      as internal_movement
 import pages.landing                as landing
 import pages.adjustments            as adjustments
@@ -58,7 +58,7 @@ def add_background(png_file: str) -> None:
 
         /* ── optional gold text theme  ─────────────────────────────── */
         h1, h2, h3, p, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {{
-            color: #F6A623 !important;
+            color: #F6A629 !important;
         }}
         </style>
 
@@ -79,19 +79,19 @@ base_pages = [
     "Home",
     "Receiving",
     "Reports",
-    "Users",
-    "Manage Locations",
-    "Scan Lookup",
+    "Sage Export",
     "Kitting",
     "Internal Movement",
     "Adjustments",
+    "Pull-tag Upload",
 ]
 
 # Admin-only pages
 admin_pages = [
-    "Pull-tag Upload",
     # "Bulk Export",
     "Upload Init CSV",
+    "Manage Locations",
+    "Users",
 ]
 
 # Combine pages based on role
@@ -120,8 +120,8 @@ elif choice == "Users":
     users.run()
 elif choice == "Manage Locations":
     manage_locations.run()
-elif choice == "Scan Lookup":
-    scan_lookup.run()
+elif choice == "Sage Export":
+    sage_r.run()
 elif choice == "Kitting":
     kitting.run()
 elif choice == "Pull-tag Upload":
