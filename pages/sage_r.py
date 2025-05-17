@@ -36,39 +36,52 @@ def _init_session_state() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # DB helpers
 # ─────────────────────────────────────────────────────────────────────────────
+# ── DB query ─────────────────────────────────────────────────────────
+def query_pulltags(job_lot_pairs: List[Tuple[str, str]],
+                   tx_types: List[str],
+                   statuses: List[str]) -> pd.DataFrame:
 
-def query_pulltags(
-    job_lot_pairs: List[Tuple[str, str]],
-    tx_types: List[str],
-    from_dt: datetime,
-    to_dt_exclusive: datetime,
-) -> pd.DataFrame:
-    """Return pulltags rows matching the filters.
-
-    * `from_dt` inclusive, `to_dt_exclusive` exclusive (UTC‑agnostic)
-    * Uses Postgres row‑value IN ((job,lot), ...) pattern for simplicity.
-    """
     if not job_lot_pairs:
         return pd.DataFrame()
 
     with get_db_cursor() as cur:
         sql = """
             SELECT id, job_number, lot_number, item_code, quantity,
-                   uom, description, cost_code, location,
-                   transaction_type, warehouse, last_updated
+                   uom, description, cost_code,
+                   warehouse AS location,   -- alias for Sage “Location”
+                   transaction_type, status
             FROM   pulltags
             WHERE  (job_number, lot_number) IN %s
-              AND  transaction_type = ANY (%s)
-              AND  last_updated >= %s
-              AND  last_updated <  %s
+              AND  transaction_type = ANY(%s)
+              AND  status           = ANY(%s)
             ORDER  BY job_number, lot_number, item_code
         """
-        cur.execute(sql, (tuple(job_lot_pairs), tx_types, from_dt, to_dt_exclusive))
+        cur.execute(sql, (tuple(job_lot_pairs), tx_types, statuses))
         rows = cur.fetchall()
         cols = [d.name for d in cur.description]
-
     return pd.DataFrame(rows, columns=cols)
 
+
+# ── TXT builder ─────────────────────────────────────────────────────
+def build_txt(header: dict, df: pd.DataFrame) -> str:
+    """header = {'batch':..., 'kit_date': date, 'acct_date': date}"""
+
+    kit = header["kit_date"].strftime("%m/%d/%Y")
+    acct = header["acct_date"].strftime("%m/%d/%Y")
+
+    out = io.StringIO()
+    # I-line (Batch, Kit Date, Accounting Date)
+    out.write(f"I,{header['batch']},{kit},{acct}\n")
+
+    # IL lines
+    for r in df.itertuples():
+        desc = (r.description or "").replace('"', "'")       # Sage hates quotes
+        out.write(
+            f"IL,{r.location},{r.item_code},{r.quantity},{r.uom},"
+            f"\"{desc}\",1,,,"
+            f"{r.job_number},{r.lot_number},{r.cost_code},M,,{kit}\n"
+        )
+    return out.getvalue()
 
 def mark_exported(ids: List[int]) -> None:
     """Set status='exported' for the given pulltags IDs."""
@@ -82,40 +95,6 @@ def mark_exported(ids: List[int]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TXT builder
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_txt(df: pd.DataFrame, title: str) -> str:
-    """Build Sage‑compatible TXT string from a filtered pulltags DataFrame."""
-    if df.empty:
-        return ""
-
-    kit_date = df["last_updated"].min().date()
-    fmt_date = kit_date.strftime("%m-%d-%y")
-
-    lines: List[str] = [
-        f"I,{title},{fmt_date},{fmt_date},,\"\",,,,,,,,,\n",
-        ",,,,\"\",,,,,,,,,\n",
-    ]
-
-    for _, row in df.iterrows():
-        location = row["location"] or row["warehouse"] or ""
-        item_code = row["item_code"]
-        qty = row["quantity"]
-        uom = row["uom"] or ""
-        desc = (row["description"] or "").ljust(45)  # pad for readability
-        cost_code = row["cost_code"] or item_code
-        job = row["job_number"]
-        lot = row["lot_number"]
-
-        il = (
-            f"IL,{location},{item_code},{qty},{uom},\"{desc}\",1,,,"
-            f"{job},{lot},{cost_code},M,,{fmt_date}\n"
-        )
-        lines.append(il)
-
-    return "".join(lines)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit UI
@@ -151,54 +130,73 @@ def run():
 
     st.markdown("---")
 
-    # ── 2) Optional filters ───────────────────────────────────────────────
+    # 2) Optional filters -------------------------------------------------
     default_tx = ["Job Issue", "ADD", "RETURNB", "Return"]
-    tx_types = st.multiselect("Transaction Types", default_tx, default=default_tx)
+    tx_types   = st.multiselect("Transaction type(s)", default_tx, default=default_tx)
 
-    col_from, col_to = st.columns(2)
-    from_date = col_from.date_input("From date (inclusive)",
-                                    value=date.today().replace(day=1))
-    to_date = col_to.date_input("To date (inclusive)", value=date.today())
+    default_st = ["kitted", "ADD", "RETURNB"]   # pick whatever makes sense
+    statuses   = st.multiselect("Status filter", default_st, default=default_st)
 
     st.markdown("---")
 
-    # ── 3) TXT header metadata ────────────────────────────────────────────
-    title = st.text_input("TXT Title")
+    # 3) Pull tags grid ---------------------------------------------------
+    if st.button("🔍 Load pull-tags"):
+        df = query_pulltags(st.session_state.job_lot_queue, tx_types, statuses)
 
-    if st.button("🚀 Generate TXT"):
-        # Validation
-        if not st.session_state.job_lot_queue:
-            st.warning("Please add at least one Job/Lot pair.")
-            st.stop()
-        if not title.strip():
-            st.warning("Please enter a TXT title.")
-            st.stop()
-        if from_date > to_date:
-            st.warning("'From' date must be on or before 'To' date.")
-            st.stop()
-
-        # Build query window (inclusive‑inclusive)
-        start_dt = datetime.combine(from_date, datetime.min.time())
-        end_dt_excl = datetime.combine(to_date + timedelta(days=1), datetime.min.time())
-
-        df = query_pulltags(st.session_state.job_lot_queue, tx_types, start_dt, end_dt_excl)
         if df.empty:
-            st.warning("No pulltags match the selected criteria.")
+            st.warning("No rows match those filters.")
             st.stop()
 
-        txt_blob = build_txt(df, title.strip())
-        safe_name = re.sub(r"\W+", "_", title.strip()) + ".txt"
-
-        clicked = st.download_button(
-            "📥 Download TXT",
-            data=txt_blob,
-            file_name=safe_name,
-            mime="text/plain",
+        # editable grid
+        edited_df = st.data_editor(
+            df,
+            num_rows="dynamic",
+            key="edit_grid",
+            hide_index=True
         )
 
-        st.dataframe(df)
+        # commit any edits
+        if st.button("💾 Save changes to DB"):
+            with get_db_cursor() as cur:
+                for row in edited_df.itertuples():
+                    cur.execute(
+                        """
+                        UPDATE pulltags
+                        SET quantity=%s, uom=%s, description=%s,
+                            cost_code=%s, warehouse=%s, transaction_type=%s, status=%s
+                        WHERE id=%s
+                        """,
+                        (
+                            row.quantity, row.uom, row.description,
+                            row.cost_code, row.location, row.transaction_type, row.status,
+                            row.id
+                        )
+                    )
+            st.success("Updates saved!")
 
-        # Update status after successful download
-        if clicked:
-            mark_exported(df["id"].tolist())
-            st.success("Rows marked as **exported**.")
+    # 4) Header + TXT export ---------------------------------------------
+    st.markdown("### Export to Sage")
+
+    col1, col2, col3 = st.columns(3)
+    batch      = col1.text_input("Batch name")
+    kit_date   = col2.date_input("Kit Date",  value=date.today())
+    acct_date  = col3.date_input("Accounting Date", value=date.today())
+
+    if st.button("🚀 Generate & Download TXT"):
+        grid_df = pd.DataFrame(st.session_state["edit_grid"]["edited_rows"])
+        if grid_df.empty:
+            st.warning("Nothing to export — load & edit rows first.")
+            st.stop()
+
+        txt_data = build_txt(
+            {"batch": batch.strip(), "kit_date": kit_date, "acct_date": acct_date},
+            grid_df
+        )
+
+        fname = re.sub(r"\W+", "_", batch.strip() or "export") + ".txt"
+        downloaded = st.download_button("📥 Download", txt_data, file_name=fname,
+                                        mime="text/plain")
+
+        if downloaded:
+            mark_exported(grid_df["id"].tolist())
+            st.success("Rows marked **exported**.")
