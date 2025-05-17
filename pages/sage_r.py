@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 from typing import List, Tuple
 import re
+import psycopg2                 # or whichever driver you're using
 
 from db import get_db_cursor  # shared DB helper
 
@@ -41,20 +42,26 @@ def _init_session_state() -> None:
 # DB helpers
 # ─────────────────────────────────────────────────────────────────────────────
 # ── DB query ─────────────────────────────────────────────────────────
+
 def query_pulltags(
     job_lot_pairs: List[Tuple[str, str]],
     tx_types: List[str],
-    statuses: List[str]),
+    statuses: List[str],
 ) -> pd.DataFrame:
 
     if not job_lot_pairs:
         return pd.DataFrame()
 
+    if not statuses:            # treat “no selection” as “all statuses”
+        with get_db_cursor() as cur:
+            cur.execute("SELECT DISTINCT status FROM pulltags;")
+            statuses = [r[0] for r in cur.fetchall()]
+
     with get_db_cursor() as cur:
         sql = """
             SELECT id, job_number, lot_number, item_code, quantity,
                    uom, description, cost_code,
-                   warehouse AS location,   -- alias for Sage “Location”
+                   warehouse AS location,
                    transaction_type, status
             FROM   pulltags
             WHERE  (job_number, lot_number) IN %s
@@ -62,9 +69,11 @@ def query_pulltags(
               AND  status           = ANY(%s)
             ORDER  BY job_number, lot_number, item_code
         """
-        cur.execute(sql, (tuple(job_lot_pairs), tx_types, statuses))
+        cur.execute(sql,
+                    (tuple(job_lot_pairs), tx_types, statuses))
         rows = cur.fetchall()
         cols = [d.name for d in cur.description]
+
     return pd.DataFrame(rows, columns=cols)
 
 
