@@ -18,16 +18,20 @@ from db import get_db_cursor  # shared DB helper
 # Session‑state initialiser
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _init_session_state():
-    """Ensure required session keys exist."""
+def _init_session_state() -> None:
+    """Ensure required session-state keys exist."""
     ss = st.session_state
+
+    # ⚠️ 1.  Don’t mix attribute assignment with type annotations
+    #        (obj.x: int = ... is a SyntaxError at runtime).
     if "job_lot_queue" not in ss:
-        ss.job_lot_queue: List[Tuple[str, str]] = []
+        ss.job_lot_queue = []                          # type: List[Tuple[str, str]]
+
     if "job_buffer" not in ss:
         ss.job_buffer = ""
+
     if "lot_buffer" not in ss:
         ss.lot_buffer = ""
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DB helpers
@@ -122,23 +126,24 @@ def run():
 
     st.title("📤 Sage Pull‑Tag Export")
 
-    # ── 1) Job / Lot queue form ────────────────────────────────────────────
-    with st.form("job_lot_form", clear_on_submit=False):
+    # ── 1) Job / Lot queue form ─────────────────────────────────────
+    with st.form("job_lot_form", clear_on_submit=True):
         c1, c2, c3 = st.columns([3, 3, 1])
-        c1.text_input("Job #", key="job_buffer")
-        c2.text_input("Lot #", key="lot_buffer")
+        job = c1.text_input("Job #", key="job_buffer")
+        lot = c2.text_input("Lot #", key="lot_buffer")
         added = c3.form_submit_button("Add")
-        if added:
-            jb, lt = st.session_state.job_buffer.strip(), st.session_state.lot_buffer.strip()
-            if jb and lt:
-                st.session_state.job_lot_queue.append((jb, lt))
-                st.session_state.job_buffer = ""
-                st.session_state.lot_buffer = ""
 
+        if added and job and lot:
+            pair = (job.strip(), lot.strip())
+            if pair not in st.session_state.job_lot_queue:   # ← skip dups
+                st.session_state.job_lot_queue.append(pair)
+
+    # ── 1b) Display & clear queue ────────────────────────────────────
     if st.session_state.job_lot_queue:
         st.write("**Queued lots:**")
         for jb, lt in st.session_state.job_lot_queue:
             st.write(f"• Job **{jb}** – Lot **{lt}**")
+
         if st.button("🗑️ Clear list"):
             st.session_state.job_lot_queue.clear()
     else:
