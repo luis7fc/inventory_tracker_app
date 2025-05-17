@@ -21,42 +21,6 @@ def verify_user_credentials(username: str, password: str):
 
 # --- LOGIN LOGIC ---
 def login():
-        st.markdown(
-            f"""
-            <style>
-            /* ── hide Streamlit’s built-in sidebar nav ─────────────────── */
-            [data-testid="stSidebarNav"] {{ display: none !important; }}
-
-            /* ── translucent sidebar & clear toolbars ─────────────────── */
-            [data-testid="stSidebar"]  {{ background: rgba(0,0,0,0.2) !important; }}
-            [data-testid="stToolbar"],
-            [data-testid="stHeader"]  {{ background: transparent !important; box-shadow:none !important; }}
-
-            /* ── remove default white containers ──────────────────────── */
-            html, body,
-            [data-testid="stAppViewContainer"],
-            .block-container {{
-                background: transparent !important;
-            }}
-
-            /* ── full-viewport background div  ─────────────────────────── */
-            .bg-div {{
-                position: fixed; inset: 0;
-                background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
-                background-size: cover !important;
-                z-index: 0 !important;
-            }}
-
-            /* ── optional gold text theme  ─────────────────────────────── */
-            h1, h2, h3, p, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {{
-                color: #F6A629 !important;
-            }}
-            </style>
-
-            <div class="bg-div"></div>
-            """,
-            unsafe_allow_html=True,
-        )
     if "user" not in st.session_state:
         st.session_state.user = None
         st.session_state.role = None
