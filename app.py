@@ -23,6 +23,9 @@ import pages.kitting                as kitting
 # ──────────────────────────────────────────────────────────────────────────────
 import base64, pathlib
 
+import base64, pathlib
+import streamlit as st
+
 def add_background(png_file: str) -> None:
     """Full-screen PNG background + white text + green buttons."""
     img_path = pathlib.Path(__file__).with_suffix("").parent / png_file
@@ -32,61 +35,76 @@ def add_background(png_file: str) -> None:
     st.markdown(
         f"""
         <style>
-        /* ── hide default multipage nav ─────────────────────────── */
-        [data-testid="stSidebarNav"] {{ display: none !important; }}
+        /* ───────────────────────── 1) BIG SIDEBAR TOGGLE ─────────────── */
+        button[aria-label="Collapse sidebar"],
+        button[aria-label="Expand sidebar"],
+        button[data-testid="collapsedControl"] {{
+            position: fixed !important;
+            top: 0.75rem; left: 0.75rem;
+            width: 40px !important; height: 40px !important;
+            padding: 0 !important;
+            background: rgba(10,14,30,0.85) !important;
+            border: 2px solid #00D67A !important;
+            border-radius: 50% !important;
+            box-shadow: 0 0 6px rgba(0,0,0,0.6);
+            z-index: 1003 !important;
+        }}
+        button[aria-label="Collapse sidebar"] svg,
+        button[aria-label="Expand sidebar"]  svg,
+        button[data-testid="collapsedControl"] svg {{
+            width: 24px !important; height: 24px !important;
+            stroke: #00D67A !important; stroke-width: 3;
+        }}
 
-        /* ── sidebar look & feel ────────────────────────────────── */
+        /* ───────────────────────── 2) SIDEBAR STYLE ─────────────────── */
+        [data-testid="stSidebarNav"] {{ display: none !important; }}
         [data-testid="stSidebar"] {{
             background: rgba(10,14,30,0.85) !important;
             backdrop-filter: blur(2px);
         }}
 
-        /* ── transparent toolbars ───────────────────────────────── */
+        /* ───────────────────────── 3) TOOLBARS & LAYOUT ─────────────── */
         [data-testid="stToolbar"],
         [data-testid="stHeader"] {{ background: transparent !important; box-shadow:none !important; }}
-
-        /* ── erase default white containers ─────────────────────── */
         html, body,
         [data-testid="stAppViewContainer"],
         .block-container {{ background: transparent !important; }}
 
-        /* ── background image ───────────────────────────────────── */
-        .bg-div {{
-            position: fixed; inset: 0;
-            background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
-            background-size: cover !important;
-            z-index: 0 !important;
-        }}
-
-        /* ── global text colour ─────────────────────────────────── */
+        /* ───────────────────────── 4) GLOBAL TEXT COLOUR ────────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
-            color: #FFFFFF !important;          /* white */
+            color: #FFFFFF !important;
             text-shadow: 0 0 4px rgba(0,0,0,0.6);
         }}
 
-        /* ── universal button theming ───────────────────────────── */
-        /* containers: st.button, st.download_button, form submit…  */
+        /* ───────────────────────── 5) BUTTON THEME ──────────────────── */
         div.stButton > button,
         div.stDownloadButton > button,
         div.stForm > form button {{
-            background-color: #00B868 !important;   /* solar green  */
+            background-color: #00B868 !important;
             color: #FFFFFF !important;
             border: none !important;
             border-radius: 6px !important;
             padding: 0.5rem 1.2rem !important;
         }}
-        /* hover / focus */
         div.stButton > button:hover,
         div.stDownloadButton > button:hover,
         div.stForm > form button:hover {{
-            background-color: #00D67A !important;   /* lighter green */
+            background-color: #00D67A !important;
         }}
         div.stButton > button:active,
         div.stDownloadButton > button:active,
         div.stForm > form button:active {{
             transform: translateY(1px);
+        }}
+
+        /* ───────────────────────── 6) HERO BACKGROUND ──────────────── */
+        .bg-div {{
+            position: fixed; inset: 0;
+            background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
+            background-size: cover !important;
+            z-index: 0 !important;
         }}
         </style>
 
@@ -94,6 +112,7 @@ def add_background(png_file: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
 
 # --- Run Login ---
 login()
