@@ -62,7 +62,7 @@ def add_background(png_file: str) -> None:
             display: none !important;
         }}
         section[data-testid="stSidebar"],
-        div[data-testid="stSidebar"] > div:first-child { /* tint bg */
+        div[data-testid="stSidebar"] > div:first-child {{ /* tint bg */
             background: rgba(10,14,30,0.85) !important;
             backdrop-filter: blur(2px);
         }}
