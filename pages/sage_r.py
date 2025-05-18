@@ -3,7 +3,7 @@ import io
 import re
 from datetime import date
 from typing import List, Tuple
-
+import uuid
 import pandas as pd
 import streamlit as st
 
@@ -81,21 +81,30 @@ def save_changes_to_db(df: pd.DataFrame) -> None:
             )
 
 
-def mark_exported(ids: List[int]) -> None:
-    if ids:
-        with get_db_cursor() as cur:
-            cur.execute(
-                "UPDATE pulltags SET status = 'exported' WHERE id = ANY(%s)",
-                (ids,),
-            )
+def mark_exported(ids: List[str]) -> None:
+    """
+    Set status='exported' for the given pull-tag UUIDs.
+    Accepts a list of strings coming from the DataFrame.
+    """
+    if not ids:
+        return
 
+    # Cast every id string to a real UUID object so psycopg2 adapts them
+    uuid_ids = [uuid.UUID(x) for x in ids]
+
+    with get_db_cursor() as cur:
+        # UUID objects → uuid[] automatically, so the = operator matches
+        cur.execute(
+            "UPDATE pulltags SET status = 'exported' WHERE id = ANY(%s)",
+            (uuid_ids,),
+        )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TXT builder
 # ─────────────────────────────────────────────────────────────────────────────
 def build_txt(header: dict, df: pd.DataFrame) -> str:
-    kit  = header["kit_date"].strftime("%m/%d/%Y")
-    acct = header["acct_date"].strftime("%m/%d/%Y")
+    kit  = header["kit_date"].strftime("%m-%d-%Y")
+    acct = header["acct_date"].strftime("%m-%d-%Y")
 
     buf = io.StringIO()
     buf.write(f"I,{header['batch']},{kit},{acct}\n")
