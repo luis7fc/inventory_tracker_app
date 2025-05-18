@@ -56,12 +56,17 @@ def add_background(png_file: str) -> None:
             stroke: #00D67A !important; stroke-width: 3;
         }}
 
-        /* ───────────────────────── 2) SIDEBAR STYLE ─────────────────── */
-        [data-testid="stSidebarNav"] {{ display: none !important; }}
-        [data-testid="stSidebar"] {{
+        /* ────────────────────  SIDEBAR STYLE  ───────────────────── */
+        div[data-testid="stSidebarNav"],
+        section[data-testid="stSidebarNav"] {            /* hide default nav */
+            display: none !important;
+        }
+        section[data-testid="stSidebar"],
+        div[data-testid="stSidebar"] > div:first-child { /* tint bg */
             background: rgba(10,14,30,0.85) !important;
             backdrop-filter: blur(2px);
-        }}
+        }
+
 
         /* ───────────────────────── 3) TOOLBARS & LAYOUT ─────────────── */
         [data-testid="stToolbar"],
