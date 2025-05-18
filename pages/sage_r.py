@@ -83,8 +83,8 @@ def save_changes_to_db(df: pd.DataFrame) -> None:
 
 def mark_exported(ids: List[str]) -> None:
     """
-    Set status='exported' for the given pull-tag UUIDs.
-    Accepts a list of strings coming from the DataFrame.
+    Flag the given pull-tag rows as exported.
+    Accepts a list of ID *strings* coming from the DataFrame.
     """
     if not ids:
         return
@@ -95,16 +95,18 @@ def mark_exported(ids: List[str]) -> None:
     with get_db_cursor() as cur:
         # UUID objects → uuid[] automatically, so the = operator matches
         cur.execute(
-            "UPDATE pulltags SET status = 'exported' WHERE id = ANY(%s)",
-            (uuid_ids,),
+            "UPDATE pulltags"
+            "SET status = 'exported' "
+            "WHERE id = ANY(%s::uuid[])",
+            (ids,),
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TXT builder
 # ─────────────────────────────────────────────────────────────────────────────
 def build_txt(header: dict, df: pd.DataFrame) -> str:
-    kit  = header["kit_date"].strftime("%m-%d-%Y")
-    acct = header["acct_date"].strftime("%m-%d-%Y")
+    kit  = header["kit_date"].strftime("%m-%d-%y")
+    acct = header["acct_date"].strftime("%m-%d-%y")
 
     buf = io.StringIO()
     buf.write(f"I,{header['batch']},{kit},{acct}\n")
