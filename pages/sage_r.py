@@ -94,7 +94,7 @@ def mark_exported(ids: List[str]) -> None:
 
     with get_db_cursor() as cur:
         # UUID objects → uuid[] automatically, so the = operator matches
-        cur.execute(cur.execute(
+        cur.execute(
             """
             UPDATE pulltags
             SET    status = 'exported'
