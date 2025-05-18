@@ -94,12 +94,15 @@ def mark_exported(ids: List[str]) -> None:
 
     with get_db_cursor() as cur:
         # UUID objects → uuid[] automatically, so the = operator matches
-        cur.execute(
-            "UPDATE pulltags"
-            "SET status = 'exported' "
-            "WHERE id = ANY(%s::uuid[])",
+        cur.execute(cur.execute(
+            """
+            UPDATE pulltags
+            SET    status = 'exported'
+            WHERE  id = ANY(%s::uuid[])
+            """,
             (ids,),
         )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TXT builder
