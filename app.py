@@ -36,7 +36,8 @@ def add_background(png_file: str) -> None:
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
         /* ── translucent sidebar & clear toolbars ────────────────── */
-        [data-testid="stSidebar"]  {{ background: rgba(0,0,0,0.2) !important; }}
+        [data-testid="stSidebar"]  {{ background: rgba(10,14,30,0.85) !important; }};
+        backdrop-filter:blur(2px);
         [data-testid="stToolbar"],
         [data-testid="stHeader"]  {{ background: transparent !important; box-shadow:none !important; }}
 
@@ -107,10 +108,9 @@ else:
 page_names = pages
 
 
-st.sidebar.image("assets/logoc.png", use_container_width=True)
-choice = st.sidebar.selectbox("🔍 Navigate", page_names, index=page_names.index("Home"))
-#Map labels to module
+st.sidebar.title("📚 Navigation")
 
+choice = st.sidebar.radio("", pages)
 
 
 #Route to the selected page
