@@ -61,7 +61,7 @@ def add_background(png_file: str) -> None:
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
-            color: #FF45FF !important;                   /* hot-pink */
+            color: #ffffff !important;                   /* hot-pink */
             text-shadow: 0 0 4px rgba(0,0,0,0.6);        /* keeps it legible */
         }}
         </style>
