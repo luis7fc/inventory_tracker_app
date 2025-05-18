@@ -121,6 +121,8 @@ def run() -> None:
     # ── 1) Job / Lot queue form ──────────────────────────────────────────
     with st.form("job_lot_form", clear_on_submit=True):
         c1, c2, c3 = st.columns([3, 3, 1])
+        
+        # NOTE: no more 'value='parameter
         job = c1.text_input("Job #", value=ss.job_buffer, key="job_buffer")
         lot = c2.text_input("Lot #", value=ss.lot_buffer, key="lot_buffer")
         if c3.form_submit_button("Add"):
@@ -128,7 +130,6 @@ def run() -> None:
                 pair = (job.strip(), lot.strip())
                 if pair not in ss.job_lot_queue:
                     ss.job_lot_queue.append(pair)
-            ss.job_buffer = ss.lot_buffer = ""
 
     if ss.job_lot_queue:
         st.write("**Queued lots:**")
