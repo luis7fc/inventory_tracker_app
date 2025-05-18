@@ -24,8 +24,7 @@ import pages.kitting                as kitting
 import base64, pathlib
 
 def add_background(png_file: str) -> None:
-    """Inject a full-screen background from a local PNG file."""
-    # Resolve path relative to app.py
+    """Inject a full-screen PNG background and set global text colour."""
     img_path = pathlib.Path(__file__).with_suffix("").parent / png_file
     with open(img_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
@@ -33,32 +32,36 @@ def add_background(png_file: str) -> None:
     st.markdown(
         f"""
         <style>
-        /* ── hide Streamlit’s built-in sidebar nav ─────────────────── */
+        /* ── hide Streamlit’s built-in sidebar nav ───────────────── */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-        /* ── translucent sidebar & clear toolbars ─────────────────── */
+        /* ── translucent sidebar & clear toolbars ────────────────── */
         [data-testid="stSidebar"]  {{ background: rgba(0,0,0,0.2) !important; }}
         [data-testid="stToolbar"],
         [data-testid="stHeader"]  {{ background: transparent !important; box-shadow:none !important; }}
 
-        /* ── remove default white containers ──────────────────────── */
+        /* ── remove default white containers ─────────────────────── */
         html, body,
         [data-testid="stAppViewContainer"],
         .block-container {{
             background: transparent !important;
         }}
 
-        /* ── full-viewport background div  ─────────────────────────── */
+        /* ── full-viewport background image ──────────────────────── */
         .bg-div {{
             position: fixed; inset: 0;
-            background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
+            background: url("data:image/png;base64,{b64}") 
+                        no-repeat center top fixed !important;
             background-size: cover !important;
             z-index: 0 !important;
         }}
 
-        /* ── optional gold text theme  ─────────────────────────────── */
-        h1, h2, h3, p, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {{
-            color: #F6A629 !important;
+        /* ── global text theme (bright magenta) ──────────────────── */
+        h1, h2, h3, p,
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricLabel"] {{
+            color: #FF45FF !important;                   /* hot-pink */
+            text-shadow: 0 0 4px rgba(0,0,0,0.6);        /* keeps it legible */
         }}
         </style>
 
@@ -66,6 +69,7 @@ def add_background(png_file: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
 
 # --- Run Login ---
 login()
