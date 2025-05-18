@@ -58,14 +58,14 @@ def add_background(png_file: str) -> None:
 
         /* ────────────────────  SIDEBAR STYLE  ───────────────────── */
         div[data-testid="stSidebarNav"],
-        section[data-testid="stSidebarNav"] {            /* hide default nav */
+        section[data-testid="stSidebarNav"] {{            /* hide default nav */
             display: none !important;
-        }
+        }}
         section[data-testid="stSidebar"],
         div[data-testid="stSidebar"] > div:first-child { /* tint bg */
             background: rgba(10,14,30,0.85) !important;
             backdrop-filter: blur(2px);
-        }
+        }}
 
 
         /* ───────────────────────── 3) TOOLBARS & LAYOUT ─────────────── */
@@ -155,7 +155,7 @@ else:
 page_names = pages
 
 
-st.sidebar.title("📚 Navigation")
+st.sidebar.title("📚 Menu")
 
 choice = st.sidebar.radio("", pages)
 
