@@ -24,7 +24,7 @@ import pages.kitting                as kitting
 import base64, pathlib
 
 def add_background(png_file: str) -> None:
-    """Inject a full-screen PNG background and set global text colour."""
+    """Full-screen PNG background + white text + green buttons."""
     img_path = pathlib.Path(__file__).with_suffix("").parent / png_file
     with open(img_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
@@ -32,37 +32,61 @@ def add_background(png_file: str) -> None:
     st.markdown(
         f"""
         <style>
-        /* ── hide Streamlit’s built-in sidebar nav ───────────────── */
+        /* ── hide default multipage nav ─────────────────────────── */
         [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-        /* ── translucent sidebar & clear toolbars ────────────────── */
-        [data-testid="stSidebar"]  {{ background: rgba(10,14,30,0.85) !important; }};
-        backdrop-filter:blur(2px);
-        [data-testid="stToolbar"],
-        [data-testid="stHeader"]  {{ background: transparent !important; box-shadow:none !important; }}
-
-        /* ── remove default white containers ─────────────────────── */
-        html, body,
-        [data-testid="stAppViewContainer"],
-        .block-container {{
-            background: transparent !important;
+        /* ── sidebar look & feel ────────────────────────────────── */
+        [data-testid="stSidebar"] {{
+            background: rgba(10,14,30,0.85) !important;
+            backdrop-filter: blur(2px);
         }}
 
-        /* ── full-viewport background image ──────────────────────── */
+        /* ── transparent toolbars ───────────────────────────────── */
+        [data-testid="stToolbar"],
+        [data-testid="stHeader"] {{ background: transparent !important; box-shadow:none !important; }}
+
+        /* ── erase default white containers ─────────────────────── */
+        html, body,
+        [data-testid="stAppViewContainer"],
+        .block-container {{ background: transparent !important; }}
+
+        /* ── background image ───────────────────────────────────── */
         .bg-div {{
             position: fixed; inset: 0;
-            background: url("data:image/png;base64,{b64}") 
-                        no-repeat center top fixed !important;
+            background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
             background-size: cover !important;
             z-index: 0 !important;
         }}
 
-        /* ── global text theme (bright magenta) ──────────────────── */
+        /* ── global text colour ─────────────────────────────────── */
         h1, h2, h3, p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {{
-            color: #827f82 !important;                   /* hot-pink */
-            text-shadow: 0 0 4px rgba(0,0,0,0.6);        /* keeps it legible */
+            color: #FFFFFF !important;          /* white */
+            text-shadow: 0 0 4px rgba(0,0,0,0.6);
+        }}
+
+        /* ── universal button theming ───────────────────────────── */
+        /* containers: st.button, st.download_button, form submit…  */
+        div.stButton > button,
+        div.stDownloadButton > button,
+        div.stForm > form button {{
+            background-color: #00B868 !important;   /* solar green  */
+            color: #FFFFFF !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 0.5rem 1.2rem !important;
+        }}
+        /* hover / focus */
+        div.stButton > button:hover,
+        div.stDownloadButton > button:hover,
+        div.stForm > form button:hover {{
+            background-color: #00D67A !important;   /* lighter green */
+        }}
+        div.stButton > button:active,
+        div.stDownloadButton > button:active,
+        div.stForm > form button:active {{
+            transform: translateY(1px);
         }}
         </style>
 
@@ -70,7 +94,6 @@ def add_background(png_file: str) -> None:
         """,
         unsafe_allow_html=True,
     )
-
 
 # --- Run Login ---
 login()
