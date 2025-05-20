@@ -1,7 +1,7 @@
 from __future__ import annotations
 import io, os, textwrap, time
 from typing import List
-
+import streamlit as st
 import pandas as pd
 import qrcode
 from supabase import create_client, Client
@@ -10,8 +10,17 @@ from db import get_db_cursor
 # ──────────────────────────────────────────────
 # Supabase client & constants
 # ──────────────────────────────────────────────
-SUPABASE_URL  = os.environ["SUPABASE_URL"]
-SERVICE_ROLE  = os.environ["SUPABASE_SERVICE_KEY"]          # server-side secret
+SUPABASE_URL = os.getenv("SUPABASE_URL", st.secrets.get("SUPABASE_URL"))
+SERVICE_ROLE = os.getenv(
+    "SUPABASE_SERVICE_KEY",
+    st.secrets.get("SUPABASE_SERVICE_KEY")
+)
+
+if not SUPABASE_URL or not SERVICE_ROLE:
+    raise RuntimeError(
+        "Supabase credentials not found in env vars or st.secrets."
+    )
+
 SUPABASE: Client = create_client(SUPABASE_URL, SERVICE_ROLE)
 
 BUCKET  = "kitting-snapshots"
