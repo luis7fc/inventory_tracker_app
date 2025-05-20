@@ -3,4 +3,4 @@ pandas
 psycopg2-binary
 bcrypt
 qrcode[pil]
-supabase-py
+supabase>=2.0
