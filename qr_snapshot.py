@@ -30,7 +30,12 @@ def _upload_and_sign(path: str, data: bytes, mime: str, *, expires: int = 60 * 6
     """Upload *data* to Supabase Storage (upsert) and return a signed URL."""
 
     # supabase‑py ≥2.3.0 expects file_options for metadata / upsert
+        # Work around storage3 bool→header bug by passing string "true" for upsert
     SUPABASE.storage.from_(BUCKET).upload(
+        path,
+        data,
+        file_options={"contentType": mime, "upsert": "true"},
+    ).upload(
         path,
         data,
         file_options={"contentType": mime, "upsert": True},
