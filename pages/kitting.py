@@ -1,9 +1,8 @@
 import streamlit as st
-import pandas as pd
-
 from db import (
     get_pulltag_rows,
     finalize_scans,
+    submit_kitting,
     get_db_cursor,
     insert_pulltag_line,
     update_pulltag_line,
@@ -11,36 +10,39 @@ from db import (
 )
 
 # -----------------------------------------------------------------------------
-# Job Kitting Page (QR‑free version)  
-# Removes all QR‑snapshot logic so we can focus on core kitting + scan flow.
+# Main Streamlit App Entry
 # -----------------------------------------------------------------------------
 
 def run():
-    """Job‑kitting workflow without QR code generation."""
-
-    # ── Basic styling (hide Streamlit multipage sidebar) ──────────────────
     st.markdown(
-        """<style>[data-testid='stSidebarNav']{display:none;}</style>""",
+        """
+        <style>
+        [data-testid="stSidebarNav"] { display: none; }
+        </style>
+        """,
         unsafe_allow_html=True,
     )
+
     st.title("📦 Job Kitting")
 
-    # ── 0. Transaction context (Issue vs Return) ─────────────────────────
+    # Transaction type + single location input
     tx_type = st.selectbox(
         "Transaction Type",
         ["Issue", "Return"],
-        help="Select 'Issue' to remove stock from the location, or 'Return' to credit it back.",
+        help="Select 'Issue' to pull stock from this location, or 'Return' to credit it here."
     )
     location = st.text_input(
         "Location",
-        help="If Issue: this is *from_location*; if Return: this is *to_location*.",
+        help="If Issue: this is your from_location; if Return: this is your to_location."
     ).strip()
 
-    # ── 1. Session state bootstrapping ───────────────────────────────────
-    st.session_state.setdefault("job_lot_queue", [])
-    st.session_state.setdefault("kitting_inputs", {})
+    # Initialize session state
+    if 'job_lot_queue' not in st.session_state:
+        st.session_state.job_lot_queue = []
+    if 'kitting_inputs' not in st.session_state:
+        st.session_state.kitting_inputs = {}
 
-    # ── 2. Add Job/Lot to queue ──────────────────────────────────────────
+    # 1) Add Job/Lot form
     with st.form("add_joblot", clear_on_submit=True):
         job = st.text_input("Job Number")
         lot = st.text_input("Lot Number")
@@ -52,94 +54,111 @@ def run():
                 else:
                     st.warning("This Job/Lot is already queued.")
             else:
-                st.error("Both Job and Lot numbers are required.")
+                st.error("Both Job Number and Lot Number are required.")
 
-    # ── 3. Iterate over each queued Job/Lot ──────────────────────────────
+    # 2) Kitting UI for each queued Job/Lot
     for job, lot in st.session_state.job_lot_queue:
         st.markdown(f"---\n**Job:** {job} | **Lot:** {lot}")
 
-        # 3.1 Add new kitted line
-        with st.form(f"add_line_{job}_{lot}", clear_on_submit=True):
-            code = st.text_input("Item Code", key=f"code_{job}_{lot}")
-            qty = st.number_input("Quantity", min_value=1, step=1, key=f"qty_{job}_{lot}")
-            if st.form_submit_button("Add Item"):
-                with get_db_cursor() as cur:
-                    cur.execute("SELECT 1 FROM items_master WHERE item_code=%s", (code,))
-                    if cur.fetchone():
-                        insert_pulltag_line(
-                            cur,
-                            job,
-                            lot,
-                            code,
-                            qty,
-                            transaction_type="Job Issue" if tx_type == "Issue" else "Return",
-                        )
-                        st.success(f"Added {qty} × {code} to {job}-{lot}.")
-                        st.rerun()
-                    else:
-                        st.error(f"Item code {code} not found in items_master.")
+        # 2.1) Add New Kitted Item scoped to this Job/Lot
+        st.markdown("### ➕ Add New Kitted Item")
+        with st.form(f"add_new_line_{job}_{lot}", clear_on_submit=True):
+            new_code = st.text_input(
+                "Item Code", 
+                placeholder="Scan or type item_code",
+                key=f"new_code_{job}_{lot}"
+            )
+            new_qty = st.number_input(
+                "Quantity Kitted", 
+                min_value=1, 
+                step=1,
+                key=f"new_qty_{job}_{lot}"
+            )
+            add_clicked = st.form_submit_button("Add Item")
 
-        # 3.2 Existing pull‑tag rows
+        if add_clicked:
+            inserted = False
+            with get_db_cursor() as cur:
+                # validate existence in items_master
+                cur.execute(
+                    "SELECT item_description FROM items_master WHERE item_code = %s",
+                    (new_code,)
+                )
+                row = cur.fetchone()
+                if row:
+                    insert_pulltag_line(cur, job, lot, new_code, new_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
+                    inserted = True
+            if not inserted:
+                st.error(f"`{new_code}` not found in items_master!")
+            else:
+                st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
+                st.rerun()
+
+        # 2.2) Load existing pull-tag rows
         rows = get_pulltag_rows(job, lot)
         if not rows:
-            st.info("No pull‑tags for this Job/Lot yet.")
+            st.info("No pull-tags found for this combination.")
             continue
 
-        # Header
-        hdr = ["Code", "Desc", "Req", "UOM", "Kit", "Cost", "Status"]
-        hcols = st.columns([1, 3, 1, 1, 1, 1, 1])
-        for col, title in zip(hcols, hdr):
-            col.markdown(f"**{title}**")
+        # Table header
+        headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
+        cols = st.columns([1, 3, 1, 1, 1, 1, 1])
+        for col, hdr in zip(cols, headers):
+            col.markdown(f"**{hdr}**")
 
-        # Rows (editable Kit Qty)
-        for r in rows:
+        # Table rows with editable Kit Qty
+        for row in rows:
             cols = st.columns([1, 3, 1, 1, 1, 1, 1])
-            cols[0].write(r["item_code"])
-            cols[1].write(r["description"])
-            cols[2].write(r["qty_req"])
-            cols[3].write(r["uom"])
-            key = f"kit_{job}_{lot}_{r['item_code']}"
-            input_qty = cols[4].number_input(
+            cols[0].write(row['item_code'])
+            cols[1].write(row['description'])
+            cols[2].write(row['qty_req'])
+            cols[3].write(row['uom'])
+            key = f"kit_{job}_{lot}_{row['item_code']}"
+            default = row['qty_req']
+            kq = cols[4].number_input(
                 label="Kit Qty",
-                min_value=-r["qty_req"],
-                max_value=r["qty_req"],
-                value=st.session_state.kitting_inputs.get(key, r["qty_req"]),
+                min_value=-row['qty_req'],
+                max_value=row['qty_req'],
+                value=st.session_state.kitting_inputs.get(key, default),
                 key=key,
-                label_visibility="collapsed",
+                label_visibility="collapsed"
             )
-            cols[5].write(r["cost_code"])
-            cols[6].write(r["status"])
-            st.session_state.kitting_inputs[(job, lot, r["item_code"])] = input_qty
+            cols[5].write(row['cost_code'])
+            cols[6].write(row['status'])
+            st.session_state.kitting_inputs[(job, lot, row['item_code'])] = kq
 
-        # 3.3 Commit edits to DB
+        # 2.3) Submit kitting for this Job/Lot using CRUD helpers
         if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
-            pending = {
+            kits = {
                 code: qty
                 for (j, l, code), qty in st.session_state.kitting_inputs.items()
                 if j == job and l == lot
             }
-            with get_db_cursor() as cur:
-                existing_codes = {r["item_code"] for r in rows}
-                # Inserts
-                for code, qty in pending.items():
-                    if code not in existing_codes and qty > 0:
-                        insert_pulltag_line(cur, job, lot, code, qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
-                # Updates / Deletes
-                for r in rows:
-                    new_qty = pending.get(r["item_code"], 0)
-                    if new_qty == 0:
-                        delete_pulltag_line(cur, r["id"])
-                    elif new_qty != r["qty_req"]:
-                        update_pulltag_line(cur, r["id"], new_qty)
-            st.success(f"Kitting saved for {job}-{lot}.")
+            with get_db_cursor() as cur:               # yields a psycopg2 cursor
+                existing = [r['item_code'] for r in rows]
 
-    # ── 4. Scan collection & finalize (original logic retained) ───────────
-    scans_needed: dict[str, dict[tuple[str, str], int]] = {}
+                # INSERT any brand-new item_codes
+                for code, qty in kits.items():
+                    if code not in existing and qty > 0:
+                        insert_pulltag_line(cur, job, lot, code, qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return" )
+
+                # UPDATE changed quantities, DELETE zeros
+                for r in rows:
+                    new_qty = kits.get(r['item_code'], 0)
+                    if new_qty == 0:
+                        delete_pulltag_line(cur, r['id'])
+                    elif new_qty != r['qty_req']:
+                        update_pulltag_line(cur, r['id'], new_qty)
+            st.success(f"Kitting updated for {job}-{lot}.")
+
+    # 3) Scan Collection
+    scans_needed = {}
     for job, lot in st.session_state.job_lot_queue:
         with get_db_cursor() as cur:
             cur.execute(
-                "SELECT item_code, quantity FROM pulltags WHERE job_number=%s AND lot_number=%s AND cost_code=item_code",
-                (job, lot),
+                "SELECT item_code, quantity FROM pulltags "
+                "WHERE job_number = %s AND lot_number = %s AND cost_code = item_code",
+                (job, lot)
             )
             for item_code, qty in cur.fetchall():
                 scans_needed.setdefault(item_code, {}).setdefault((job, lot), 0)
@@ -148,28 +167,59 @@ def run():
     if scans_needed:
         st.markdown("---")
         st.subheader("🔍 Scan Collection")
-        scan_inputs: dict[str, str] = {}
+        scan_inputs = {}
         for item_code, lots in scans_needed.items():
             total = sum(lots.values())
             st.write(f"**{item_code}** — Total Scans: {total}")
             for i in range(1, total + 1):
                 key = f"scan_{item_code}_{i}"
-                scan_inputs[key] = st.text_input(f"Scan {i}", key=key, label_visibility="collapsed")
-
+                scan_inputs[key] = st.text_input(f"Scan {i}", key=key)
+                
         if st.button("Finalize Scans"):
             if not location:
                 st.error("Please enter a Location before finalizing scans.")
             else:
-                user = st.session_state.user
-                total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
-                progress = st.progress(0)
+                sb = st.session_state.user
 
-                def upd(pct: int):
-                    progress.progress(pct)
+                # 1) Calculate total scans for the progress bar
+                total_scans = sum(
+                    qty
+                    for lots in scans_needed.values()
+                    for qty in lots.values()
+                )
 
+                # 2) Create and initialize the progress bar
+                progress_bar = st.progress(0)
+
+                # 3) Show a spinner while scans are processed
                 with st.spinner("Processing scans…"):
+                    def update_progress(pct: int):
+                        # pct is an integer from 0 to 100
+                        progress_bar.progress(pct)
+
+                    # 4) Call finalize_scans with our progress callback
                     if tx_type == "Issue":
-                        finalize_scans(scans_needed, scan_inputs, st.session_state.job_lot_queue, from_location=location, to_location=None, scanned_by=user, progress_callback=upd)
-                    else:
-                        finalize_scans(scans_needed, scan_inputs, st.session_state.job_lot_queue, from_location=None, to_location=location, scanned_by=user, progress_callback=upd)
-                st.success("Scans processed and inventory updated.")
+                        finalize_scans(
+                            scans_needed,
+                            scan_inputs,
+                            st.session_state.job_lot_queue,
+                            from_location=location,
+                            to_location=None,
+                            scanned_by=sb,
+                            progress_callback=update_progress
+                        )
+                    else:  # Return
+                        finalize_scans(
+                            scans_needed,
+                            scan_inputs,
+                            st.session_state.job_lot_queue,
+                            from_location=None,
+                            to_location=location,
+                            scanned_by=sb,
+                            progress_callback=update_progress
+                        )
+
+        # 5) Final success message
+        st.success("Scans processed and inventory updated.")
+
+# End of job_kitting.py
