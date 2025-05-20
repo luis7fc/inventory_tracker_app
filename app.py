@@ -26,15 +26,6 @@ import base64, pathlib
 
 import base64, pathlib
 import streamlit as st
-from qr_snapshot import _manual_purge
-
-if "next_purge" not in st.session_state:
-    st.session_state.next_purge = 0
-
-# run once per session start (very light)
-if time.time() > st.session_state.next_purge:
-    _manual_purge()
-    st.session_state.next_purge = time.time() + 24*60*60   # run again in 24 h
 
 def add_background(png_file: str) -> None:
     """Full-screen PNG background + white text + green buttons."""
