@@ -26,6 +26,9 @@ import base64, pathlib
 import base64, pathlib
 import streamlit as st
 
+#DEBUG LINE
+st.write("DEBUG SECRETS:", dict(st.secrets).keys())
+#END DEBUG LINE
 def add_background(png_file: str) -> None:
     """Full-screen PNG background + white text + green buttons."""
     img_path = pathlib.Path(__file__).with_suffix("").parent / png_file
