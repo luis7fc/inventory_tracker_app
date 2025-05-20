@@ -1,8 +1,9 @@
 import streamlit as st
+import pandas as pd
+from qr_snapshot import generate_qr_snapshot_from_df
 from db import (
     get_pulltag_rows,
     finalize_scans,
-    submit_kitting,
     get_db_cursor,
     insert_pulltag_line,
     update_pulltag_line,
@@ -56,6 +57,8 @@ def run():
             else:
                 st.error("Both Job Number and Lot Number are required.")
 
+    visible_rows = []
+    
     # 2) Kitting UI for each queued Job/Lot
     for job, lot in st.session_state.job_lot_queue:
         st.markdown(f"---\n**Job:** {job} | **Lot:** {lot}")
@@ -99,6 +102,8 @@ def run():
         if not rows:
             st.info("No pull-tags found for this combination.")
             continue
+
+        visible_rows.extend(rows)
 
         # Table header
         headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
@@ -151,6 +156,25 @@ def run():
                         update_pulltag_line(cur, r['id'], new_qty)
             st.success(f"Kitting updated for {job}-{lot}.")
 
+    if visible_rows:
+        visible_df = pd.DataFrame(visible_rows)
+        visible_df = visible_df[                  # fixed typo + columns
+            ["id", "job_number", "lot_number",
+             "item_code", "description", "qty_req", "uom"]
+        ]
+        st.markdown("---")
+        st.subheader("QR Snapshot")
+
+        if st.button("Generate QR for ALL rows in view"):
+            with st.spinner("Building kit QR..."):
+                url, png_bytes = generate_qr_snapshot_from_df(
+                    visible_df, st.session_state.user
+                )
+                st.image(png_bytes, width = 220)
+                st.download_button("Download bundle QR", png_bytes,
+                                   file_name = "bundle_qr.png", mime= "image/png")
+                st.success("QR ready! Attach the label to your pallet using NIIMBOT.")
+                
     # 3) Scan Collection
     scans_needed = {}
     for job, lot in st.session_state.job_lot_queue:
@@ -219,7 +243,6 @@ def run():
                             progress_callback=update_progress
                         )
 
-        # 5) Final success message
-        st.success("Scans processed and inventory updated.")
-
+                st.success("Scans processed and inventory updated.")
+            
 # End of job_kitting.py
