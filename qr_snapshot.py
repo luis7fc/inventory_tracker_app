@@ -10,18 +10,11 @@ from db import get_db_cursor
 # ──────────────────────────────────────────────
 # Supabase client & constants
 # ──────────────────────────────────────────────
-SUPABASE_URL = os.getenv("SUPABASE_URL", st.secrets.get("SUPABASE_URL"))
-SERVICE_ROLE = os.getenv(
-    "SUPABASE_SERVICE_KEY",
-    st.secrets.get("SUPABASE_SERVICE_KEY")
-)
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SERVICE_ROLE = st.secrets["SUPABASE_SERVICE_KEY"]
 
-if not SUPABASE_URL or not SERVICE_ROLE:
-    raise RuntimeError(
-        "Supabase credentials not found in env vars or st.secrets."
-    )
+SUPABASE = create_client(SUPABASE_URL, SERVICE_ROLE)
 
-SUPABASE: Client = create_client(SUPABASE_URL, SERVICE_ROLE)
 
 BUCKET  = "kitting-snapshots"
 EXPIRES = 60 * 60 * 24 * 30          # 30 days
