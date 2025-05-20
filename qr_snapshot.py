@@ -99,3 +99,18 @@ def generate_qr_snapshot_from_df(df: pd.DataFrame, created_by: str) -> tuple[str
         )
 
     return signed_url, png_bytes
+
+
+
+def _manual_purge():
+    from supabase import create_client
+    sb = create_client(SUPABASE_URL, SERVICE_ROLE)
+    # 90-day cutoff
+    now, max_age = time.time(), 90 * 24 * 60 * 60
+    objs = sb.storage.from_(BUCKET).list("bundle")  # all bundle/ snapshots
+    for obj in objs:
+        age = now - time.mktime(time.strptime(obj["created_at"],
+                                              "%Y-%m-%dT%H:%M:%S.%fZ"))
+        if age > max_age:
+            sb.storage.from_(BUCKET).remove([f"bundle/{obj['name']}"])
+
