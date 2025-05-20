@@ -115,8 +115,13 @@ def run():
         # 2.2) Load existing rows for this Job/Lot
         rows = get_pulltag_rows(job, lot)
         if not rows:
-            st.info("No pull‑tags found for this combination.")
+            st.info("No pull-tags found for this combination.")
             continue
+
+        # Ensure job/lot present for QR snapshot
+        for r in rows:
+            r.setdefault("job_number", job)
+            r.setdefault("lot_number", lot)
 
         visible_rows.extend(rows)
 
