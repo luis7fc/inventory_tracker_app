@@ -304,7 +304,7 @@ def run():
 
                 qty_store = -abs(qty) if transaction_type == "RETURNB" else qty
                 insert_pulltag_line(
-                    cur, job, lot, code, qty_store, transaction_type, warehouse, note=note
+                    cur, job, lot, code, qty_store, location, transaction_type, note=note
                 )
 
             # ── build scan checklist only if tracking required ───────────
