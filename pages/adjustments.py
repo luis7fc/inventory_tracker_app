@@ -15,7 +15,7 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity,
     Sets status to 'pending', accepts note for audit tracking.
     """
     # Lookup warehouse
-    cur.execute("SELECT warehouse FROM locations WHERE location = %s", (location,))
+    cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (location,))
     wh_result = cur.fetchone()
     if not wh_result:
         raise Exception(f"Unknown location '{location}': cannot resolve warehouse.")
@@ -402,7 +402,7 @@ def run():
                     st.error(f"⚠️ {err}")
                     st.stop()  # leave widgets intact for correction
 
-            st.success("✅ Adjustments finalised and inventory updated.")
+            st.success("✅ Adjustments finalized and inventory updated.")
             # reset session
             for k in ("adjustments", "scans_needed", "job_lot_queue", "confirmed_rows"):
                 st.session_state.pop(k, None)
