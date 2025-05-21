@@ -206,10 +206,12 @@ def get_all_users():
 # --- Pull-tags Helper Functions ---
 def get_pulltag_rows(job_number, lot_number):
     """Fetch pulltags for a given job and lot."""
-    query = (
-        "SELECT warehouse, item_code, description, quantity AS qty_req, uom, cost_code, status "
-        "FROM pulltags WHERE job_number = %s AND lot_number = %s"
-    )
+    query = """
+    SELECT id, warehouse, item_code, description, quantity AS qty_req, uom, cost_code, status
+    FROM pulltags
+    WHERE job_number = %s AND lot_number = %s
+    """
+
     with get_db_cursor() as cur:
         cur.execute(query, (job_number, lot_number))
         rows = cur.fetchall()
