@@ -121,8 +121,8 @@ def run():
                 default = row['qty_req']
                 kq = cols[4].number_input(
                     label="Kit Qty",
-                    min_value=-row['qty_req'],
-                    max_value=row['qty_req'],
+                    min_value=-999 if tx_type == "Return" else 0,
+                    max_value=999,
                     value=st.session_state.kitting_inputs.get(key, default),
                     key=key,
                     label_visibility="collapsed"
