@@ -7,38 +7,34 @@ from config import WAREHOUSES
 # ──────────────────────────────────────────────────────────────────────────────
 # Helper: insert a pull-tag row (adds warehouse + kitted status)
 # ──────────────────────────────────────────────────────────────────────────────
-def insert_pulltag_line(
-    cur,
-    job_number,
-    lot_number,
-    item_code,
-    quantity,
-    transaction_type="Job Issue",
-    warehouse=None,
-    status="kitted",
-):
-    sql = """
-        INSERT INTO pulltags
-              (job_number, lot_number, item_code, quantity,
-               description, cost_code, uom, status, transaction_type, warehouse)
-        SELECT %s, %s, item_code, %s, item_description,
-               cost_code, uom, %s, %s, %s
-        FROM   items_master
-        WHERE  item_code = %s
-        RETURNING id
+def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity,
+                        location, transaction_type="Job Issue", note="Qty Verified by WH"):
     """
-    cur.execute(
-        sql,
-        (
-            job_number,
-            lot_number,
-            quantity,
-            status,
-            transaction_type,
-            warehouse,
-            item_code,
-        ),
-    )
+    Inserts a new pulltag row using items_master metadata.
+    Derives warehouse from the provided location.
+    Sets status to 'pending', accepts note for audit tracking.
+    """
+    # Lookup warehouse
+    cur.execute("SELECT warehouse FROM locations WHERE location = %s", (location,))
+    wh_result = cur.fetchone()
+    if not wh_result:
+        raise Exception(f"Unknown location '{location}': cannot resolve warehouse.")
+    warehouse = wh_result[0]
+
+    # Insert pulltag
+    sql = """
+    INSERT INTO pulltags
+      (job_number, lot_number, item_code, quantity,
+       description, cost_code, uom, status, transaction_type, note, warehouse)
+    SELECT
+      %s, %s, item_code, %s,
+      item_description, cost_code, uom,
+      'pending', %s, %s, %s
+    FROM items_master
+    WHERE item_code = %s
+    RETURNING id
+    """
+    cur.execute(sql, (job_number, lot_number, quantity, transaction_type, note, warehouse, item_code))
     return cur.fetchone()[0]
 
 
@@ -308,7 +304,7 @@ def run():
 
                 qty_store = -abs(qty) if transaction_type == "RETURNB" else qty
                 insert_pulltag_line(
-                    cur, job, lot, code, qty_store, transaction_type, warehouse
+                    cur, job, lot, code, qty_store, transaction_type, warehouse, note=note
                 )
 
             # ── build scan checklist only if tracking required ───────────
