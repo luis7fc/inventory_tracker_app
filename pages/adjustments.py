@@ -296,12 +296,12 @@ def run():
             # ── DB look-ups & pull-tag insert ────────────────────────────
             with get_db_cursor() as cur:          # ←--- INDENT **8 spaces** (same as the comment)
                 cur.execute(
-                    "SELECT item_code FROM items_master "
-                    "WHERE item_code = %s AND cost_code = item_code",
+                    "SELECT scan_required FROM items_master WHERE item_code = %s",
                     (code,),
                 )
-                scan_tracked = bool(cur.fetchone())
-
+                res = cur.fetchone()
+                scan_tracked = bool(res and res[0])
+                
                 qty_store = -abs(qty) if transaction_type == "RETURNB" else qty
                 insert_pulltag_line(
                     cur, job, lot, code, qty_store, location, transaction_type, note=note
