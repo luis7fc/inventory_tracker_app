@@ -88,7 +88,16 @@ def run():
                 )
                 row = cur.fetchone()
                 if row:
-                    insert_pulltag_line(cur, job, lot, new_code, new_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
+                    adjusted_qty = -abs(new_qty) if tx_type == "Return" else new_qty
+                    insert_pulltag_line(
+                        cur,
+                        job,
+                        lot,
+                        new_code,
+                        adjusted_qty,
+                        location,
+                        transaction_type="Job Issue" if tx_type == "Issue" else "Return"
+                    )
                     inserted = True
             if not inserted:
                 st.error(f"`{new_code}` not found in items_master!")
