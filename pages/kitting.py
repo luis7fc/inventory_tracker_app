@@ -133,29 +133,31 @@ def run():
                 st.session_state.kitting_inputs[(job, lot, row['item_code'], row['id'])] = kq
 
         if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
+
             kits = {
-                code: qty
-                for (j, l, code), qty in st.session_state.kitting_inputs.items()
+                (j, l, code, pid): qty
+                for (j, l, code, pid), qty in st.session_state.kitting_inputs.items()
                 if j == job and l == lot
             }
+
             with get_db_cursor() as cur:
                 existing = [r['item_code'] for r in rows]
 
-                for code, qty in kits.items():
+                for (j, l, code, pid), qty in kits.items():
                     if code not in existing and qty != 0:
                         adjusted_qty = -abs(qty) if tx_type == "Return" else qty
                         insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
 
                 for r in rows:
-                    new_qty = kits.get(r['item_code'], 0)
+                    new_qty = kits.get((job, lot, r['item_code'], r['id']), 0)
                     adjusted_qty = -abs(new_qty) if tx_type == "Return" else new_qty
                     if adjusted_qty == 0:
                         delete_pulltag_line(cur, r['id'])
                     elif adjusted_qty != r['qty_req']:
                         update_pulltag_line(cur, r['id'], adjusted_qty)
-
-            st.success(f"Kitting updated for {job}-{lot}.")
-            
+                        
+                st.success(f"Kitting updated for {job}-{lot}.")
+                            
     scans_needed = {}
     for job, lot in st.session_state.job_lot_queue:
         with get_db_cursor() as cur:
