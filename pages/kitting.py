@@ -117,7 +117,7 @@ def run():
                 cols[1].write(row['description'])
                 cols[2].write(row['qty_req'])
                 cols[3].write(row['uom'])
-                key = f"kit_{job}_{lot}_{row['item_code']}"
+                key = f"kit_{job}_{lot}_{row['item_code']}_{row['id']}"
                 default = row['qty_req']
                 kq = cols[4].number_input(
                     label="Kit Qty",
@@ -129,7 +129,7 @@ def run():
                 )
                 cols[5].write(row['cost_code'])
                 cols[6].write(row['status'])
-                st.session_state.kitting_inputs[(job, lot, row['item_code'])] = kq
+                st.session_state.kitting_inputs[(job, lot, row['item_code'], row['id'])] = kq
 
         if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
             kits = {
@@ -151,13 +151,19 @@ def run():
                     elif new_qty != r['qty_req']:
                         update_pulltag_line(cur, r['id'], new_qty)
             st.success(f"Kitting updated for {job}-{lot}.")
-
+            
     scans_needed = {}
     for job, lot in st.session_state.job_lot_queue:
         with get_db_cursor() as cur:
             cur.execute(
-                "SELECT item_code, quantity FROM pulltags "
-                "WHERE job_number = %s AND lot_number = %s AND cost_code = item_code",
+                """
+                SELECT p.item_code, p.quantity
+                FROM pulltags p
+                JOIN items_master im ON p.item_code = im.item_code
+                WHERE p.job_number = %s
+                  AND p.lot_number = %s
+                  AND im.scan_required = TRUE
+                """,
                 (job, lot)
             )
             for item_code, qty in cur.fetchall():
