@@ -259,7 +259,7 @@ def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity,
     Forces status = 'pending', note = 'Added'.
     """
     # Lookup warehouse
-    cur.execute("SELECT warehouse FROM locations WHERE location = %s", (location,))
+    cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (location,))
     wh_result = cur.fetchone()
     if not wh_result:
         raise Exception(f"Unknown location '{location}': cannot resolve warehouse.")
