@@ -178,6 +178,8 @@ def run():
                 WHERE p.job_number = %s
                   AND p.lot_number = %s
                   AND im.scan_required = TRUE
+                  AND p.transaction_type IN ('Job Issue', 'Return')  -- exclude ADD, RETURNB
+
                 """,
                 (job, lot)
             )
