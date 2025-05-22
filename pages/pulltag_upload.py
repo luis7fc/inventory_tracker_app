@@ -69,21 +69,36 @@ def parse_to_records(txt_file):
     txt_file.seek(0)
     return records
 
-
 def parse_and_insert(txt_file):
     """
     Insert parsed IL rows from txt_file into the pulltags table.
+    Prevents duplicate inserts for Job Issue/Return types.
+    Returns inserted count and skipped row summaries.
     """
     records = parse_to_records(txt_file)
     insert_count = 0
+    skipped = []  # collect skipped rows for user feedback
+
     with get_db_cursor() as cursor:
         for rec in records:
             cursor.execute(
                 """
+                SELECT 1 FROM pulltags
+                WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                  AND transaction_type IN ('Job Issue', 'Return')
+                """,
+                (rec['job_number'], rec['lot_number'], rec['item_code'])
+            )
+            if cursor.fetchone():
+                skipped.append(f"{rec['job_number']} / {rec['lot_number']} / {rec['item_code']}")
+                continue
+
+            cursor.execute(
+                """
                 INSERT INTO pulltags
                   (warehouse, item_code, quantity, uom, description,
-                   job_number, lot_number, cost_code)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                   job_number, lot_number, cost_code, transaction_type, status, note)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'Job Issue','pending','Imported')
                 """,
                 (
                     rec['warehouse'], rec['item_code'], rec['quantity'],
@@ -92,7 +107,8 @@ def parse_and_insert(txt_file):
                 )
             )
             insert_count += 1
-    return insert_count
+
+    return insert_count, skipped
 
 
 def run():
@@ -140,7 +156,20 @@ def run():
     if st.button("Commit Parsed Pull-tags to DB"):
         total_inserted = 0
         for f in new_files:
-            total_inserted += parse_and_insert(f)
+            inserted, skipped = parse_and_insert(f)
+            total_inserted += inserted
+            if skipped:
+                st.warning(f"⚠️ Skipped {len(skipped)} duplicate rows:")
+                st.code("\n".join(skipped))
+
             st.session_state.processed_files.add(f.name)
+
         st.success(f"✅ Inserted {total_inserted} rows into pulltags")
         st.info("Done processing and committing pull-tag files.")
+
+        # Show final reset option
+        if st.button("✅ Click here to clear the page."):
+            st.session_state.pop("processed_files", None)
+            st.rerun()
+
+        st.caption("This will reset the page so you can upload a new set of pulltags.")
