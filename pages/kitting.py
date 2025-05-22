@@ -96,7 +96,8 @@ def run():
                 st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
                 st.rerun()
 
-        rows = get_pulltag_rows(job, lot)
+        rows = [r for r in get_pulltag_rows(job, lot) if r['transaction_type'] in ('Job Issue', 'Return')]
+
         if not rows:
             st.info("No pull-tags found for this combination.")
             continue
@@ -141,15 +142,18 @@ def run():
                 existing = [r['item_code'] for r in rows]
 
                 for code, qty in kits.items():
-                    if code not in existing and qty > 0:
-                        insert_pulltag_line(cur, job, lot, code, qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
+                    if code not in existing and qty != 0:
+                        adjusted_qty = -abs(qty) if tx_type == "Return" else qty
+                        insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
 
                 for r in rows:
                     new_qty = kits.get(r['item_code'], 0)
-                    if new_qty == 0:
+                    adjusted_qty = -abs(new_qty) if tx_type == "Return" else new_qty
+                    if adjusted_qty == 0:
                         delete_pulltag_line(cur, r['id'])
-                    elif new_qty != r['qty_req']:
-                        update_pulltag_line(cur, r['id'], new_qty)
+                    elif adjusted_qty != r['qty_req']:
+                        update_pulltag_line(cur, r['id'], adjusted_qty)
+
             st.success(f"Kitting updated for {job}-{lot}.")
             
     scans_needed = {}
