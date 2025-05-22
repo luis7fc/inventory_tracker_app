@@ -303,6 +303,12 @@ from fpdf import FPDF
 import tempfile
 
 def generate_finalize_summary_pdf(summary_data, output_path="/mnt/data/final_scan_summary.pdf"):
+    import os
+    from fpdf import FPDF
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -442,5 +448,21 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 total_needed -= qty
                 if total_needed <= 0:
                     break
+                
+    # Finalize any untouched pulltags for this job/lot group
+    with get_db_cursor() as cur:
+        for job, lot in job_lot_queue:
+            if from_location:
+                cur.execute("""
+                    UPDATE pulltags
+                    SET status = 'kitted'
+                    WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Job Issue'
+                """, (job, lot))
+            elif to_location:
+                cur.execute("""
+                    UPDATE pulltags
+                    SET status = 'returned'
+                    WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Return'
+                """, (job, lot))
 
     generate_finalize_summary_pdf(summary_rows)
