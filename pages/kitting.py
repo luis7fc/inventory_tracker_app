@@ -354,27 +354,42 @@ def run():
             for col, hdr in zip(cols, headers):
                 col.markdown(f"**{hdr}**")
             #
-            for row in rows:
+        MAX_PULLTAGS = 30
+        visible_rows = rows[-MAX_PULLTAGS:]
+        if len(rows) > MAX_PULLTAGS:
+            st.info(f"Showing last {MAX_PULLTAGS} of {len(rows)} pulltags.")
+
+        headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
+        with st.container():
+            cols = st.columns([1, 3, 1, 1, 1, 1, 1])
+            for col, hdr in zip(cols, headers):
+                col.markdown(f"**{hdr}**")
+
+            for row in visible_rows:
                 cols = st.columns([1, 3, 1, 1, 1, 1, 1])
                 cols[0].write(row['item_code'])
                 cols[1].write(row['description'])
                 cols[2].write(row['qty_req'])
                 cols[3].write(row['uom'])
+
                 key = f"kit_{job}_{lot}_{row['item_code']}_{row['id']}"
                 min_qty = -999 if tx_type == "Return" else 0
                 default = max(row['qty_req'], min_qty)
-                kq = cols[4].number_input(
-                    label="Kit Qty",
-                    min_value=min_qty,
-                    max_value=999,
-                    value=st.session_state.kitting_inputs.get(key, default),
-                    key=key,
-                    label_visibility="collapsed"
-                )
+
+                if st.checkbox(f"Edit Qty", key=f"edit_{job}_{lot}_{row['id']}", value=False):
+                    st.session_state.kitting_inputs[key] = cols[4].number_input(
+                        label="Kit Qty",
+                        min_value=min_qty,
+                        max_value=999,
+                        value=st.session_state.kitting_inputs.get(key, default),
+                        key=key,
+                        label_visibility="collapsed"
+                    )
+                else:
+                    cols[4].write(st.session_state.kitting_inputs.get(key, default))
 
                 cols[5].write(row['cost_code'])
                 cols[6].write(row['status'])
-                st.session_state.kitting_inputs[(job, lot, row['item_code'], row['id'])] = kq
 
         if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
 
@@ -422,14 +437,22 @@ def run():
                 scans_needed.setdefault(item_code, {}).setdefault((job, lot), 0)
                 scans_needed[item_code][(job, lot)] += abs(qty)
 
+    MAX_VISIBLE_SCANS = 20  # limit for UI rendering
+
     if scans_needed:
         st.markdown("---")
         st.subheader("🔍 Scan Collection")
         scan_inputs = {}
+
         for item_code, lots in scans_needed.items():
             for (job, lot), qty in lots.items():
                 st.write(f"**{item_code} — {job}/{lot}** — Total Scans: {qty}")
-                for i in range(1, qty + 1):
+
+                show_all_key = f"show_all_scans_{job}_{lot}_{item_code}"
+                show_all = st.checkbox("Show all scan fields", key=show_all_key) if qty > MAX_VISIBLE_SCANS else True
+                visible_range = range(1, qty + 1) if show_all else range(qty - MAX_VISIBLE_SCANS + 1, qty + 1)
+
+                for i in visible_range:
                     key = f"scan_{job}_{lot}_{item_code}_{i}"
                     scan_inputs[key] = st.text_input(f"Scan {i}", key=key)
 
