@@ -53,17 +53,18 @@ def generate_finalize_summary_pdf(summary_data):
 
 
 #2) Scan Verification -> Inventory upserts
-
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
                    scanned_by=None, progress_callback=None):
-  
+
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
-    done = 0
-    expected_count = sum(qty for lots in scans_needed.values() for qty in lots.values())
+    expected_count = total_scans
     actual_count = len(scan_inputs)
 
     if actual_count != expected_count:
         raise Exception(f"Expected {expected_count} scans but received {actual_count}. Please recheck scan list.")
+
+    flat_scan_list = list(scan_inputs.values())
+    done = 0
 
     with get_db_cursor() as cur:
         for item_code, lots in scans_needed.items():
@@ -100,9 +101,9 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 """, (trans_type, warehouse, loc_value, job, lot, item_code, qty, sb))
 
                 for idx in range(1, qty + 1):
-                    # Sequential flat key scheme
-                    sid = scan_inputs.get(f"scan_{done + 1}", "").strip()
-                    
+                    if done >= len(flat_scan_list):
+                        raise Exception(f"Expected more scans for {item_code} in {job}-{lot}")
+                    sid = flat_scan_list[done].strip()
                     if not sid:
                         raise Exception(f"Missing scan ID for {item_code} #{idx} in {job}-{lot}")
 
@@ -157,74 +158,6 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 if total_needed <= 0:
                     break
 
-    # Finalize all pulltags status for the job/lot group
-    with get_db_cursor() as cur:
-        for job, lot in job_lot_queue:
-            if from_location:
-                cur.execute("""
-                    UPDATE pulltags
-                    SET status = 'kitted'
-                    WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Job Issue'
-                """, (job, lot))
-            elif to_location:
-                cur.execute("""
-                    UPDATE pulltags
-                    SET status = 'returned'
-                    WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Return'
-                """, (job, lot))
-
-    # Build full pulltag summary
-    summary_rows = []
-    with get_db_cursor() as cur:
-        cur.execute("""
-            SELECT job_number, lot_number, item_code, description, quantity
-            FROM pulltags
-            WHERE job_number = %s AND lot_number = %s
-              AND transaction_type IN ('Job Issue', 'Return')
-        """, (job, lot))
-        rows = cur.fetchall()
-
-        for job_number, lot_number, item_code, description, quantity in rows:
-            cur.execute("""
-                SELECT scan_id
-                FROM scan_verifications
-                WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                  AND transaction_type = %s
-                  AND scan_time >= (
-                      SELECT MAX(date)
-                      FROM transactions
-                      WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                        AND transaction_type = %s
-                  )
-                ORDER BY scan_time
-            """, (job_number, lot_number, item_code, trans_type,
-                  job_number, lot_number, item_code, trans_type))
-
-            scan_ids = [r[0] for r in cur.fetchall()]
-
-            if scan_ids:
-                for sid in scan_ids:
-                    summary_rows.append({
-                        "job_number": job_number,
-                        "lot_number": lot_number,
-                        "item_code": item_code,
-                        "item_description": description,
-                        "scan_id": sid,
-                        "qty": 1
-                    })
-            else:
-                summary_rows.append({
-                    "job_number": job_number,
-                    "lot_number": lot_number,
-                    "item_code": item_code,
-                    "item_description": description,
-                    "scan_id": None,
-                    "qty": abs(quantity)
-                })
-
-
-
-    generate_finalize_summary_pdf(summary_rows)
 
 # -----------------------------------------------------------------------------
 # Main Streamlit App Entry
@@ -452,12 +385,14 @@ def run():
     if "scan_buffer" not in st.session_state:
         st.session_state.scan_buffer = []
 
-    # Input for new scan
-    new_scan = st.text_input("📷 Scan Item Here", key="scan_live")
+    def commit_scan():
+        val = st.session_state.scan_live.strip()
+        if val:
+            # Attach scan with inferred metadata here
+            st.session_state.scan_buffer.append(("UNK", "UNK", "UNK", val))
+            st.session_state.scan_live = ""
 
-    if new_scan:
-        st.session_state.scan_buffer.append(new_scan.strip())
-        st.session_state.scan_live = ""  # clear input for next scan
+    st.text_input("📷 Scan Item Here", key="scan_live", on_change=commit_scan)
 
     # Display recent scans
     if st.session_state.scan_buffer:
@@ -473,9 +408,10 @@ def run():
             st.error("Please enter a Location before finalizing scans.")
         else:
             scan_inputs = {}
-            for idx, sid in enumerate(st.session_state.scan_buffer, 1):
-                # Use a generic key scheme for now; backend finalizer logic will need scan_count vs expected check
-                scan_inputs[f"scan_{idx}"] = sid
+            for idx, (job, lot, item_code, sid) in enumerate(st.session_state.scan_buffer, 1):
+                scan_inputs[f"{job}_{lot}_{item_code}_{idx}"] = sid
+
+
 
             sb = st.session_state.user
             progress_bar = st.progress(0)
