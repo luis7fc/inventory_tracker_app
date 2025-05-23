@@ -228,16 +228,19 @@ def run():
     st.markdown(
         """
         <style>
+        html, body, [data-testid="stAppViewContainer"] {
+            overflow-y: scroll !important;
+        }
         ::-webkit-scrollbar {
             width: 12px;
         }
         ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: #f0f0f0;
         }
         ::-webkit-scrollbar-thumb {
             background-color: #888;
             border-radius: 6px;
-            border: 3px solid #f1f1f1;
+            border: 3px solid #f0f0f0;
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #555;
