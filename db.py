@@ -299,41 +299,6 @@ def delete_pulltag_line(cur, line_id):
     cur.execute(sql, (line_id,))
 
 
-from fpdf import FPDF
-import tempfile
-
-def generate_finalize_summary_pdf(summary_data):
-    import os
-    import tempfile
-    from fpdf import FPDF
-
-    # Safe path in system temp directory
-    output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
-
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-
-    pdf.cell(200, 10, txt="CRS Final Scan Summary Report", ln=True, align="C")
-    pdf.ln(10)
-
-    headers = ["Job", "Lot", "Item Code", "Qty", "Transaction", "Warehouse", "Location", "Scan ID"]
-    col_widths = [20, 20, 30, 10, 30, 30, 30, 40]
-
-    for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 10, header, border=1)
-    pdf.ln()
-
-    for row in summary_data:
-        for i, field in enumerate(headers):
-            val = str(row.get(field.lower().replace(" ", "_"), ""))
-            pdf.cell(col_widths[i], 10, val, border=1)
-        pdf.ln()
-
-    pdf.output(output_path)
-    return output_path
-
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
                    scanned_by=None, progress_callback=None):
     """
