@@ -373,7 +373,7 @@ def run():
         st.markdown("---")
         st.subheader("🔍 Scan Collection")
         scan_inputs = {}
-        for item_code, lots in scans_needed.items():s
+        for item_code, lots in scans_needed.items():
             for (job, lot), qty in lots.items():
                 st.write(f"**{item_code} — {job}/{lot}** — Total Scans: {qty}")
                 for i in range(1, qty + 1):
