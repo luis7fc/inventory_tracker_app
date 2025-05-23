@@ -230,7 +230,11 @@ def run():
                         )
 
                 st.success("Scans processed and inventory updated.")
-                summary_path = "/mnt/data/final_scan_summary.pdf"
+                
+
+                summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
+
+
                 if os.path.exists(summary_path):
                     with open(summary_path, "rb") as f:
                         st.download_button(
