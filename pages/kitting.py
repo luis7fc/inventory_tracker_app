@@ -321,7 +321,7 @@ def run():
             cols = st.columns([1, 3, 1, 1, 1, 1, 1])
             for col, hdr in zip(cols, headers):
                 col.markdown(f"**{hdr}**")
-
+            #
             for row in rows:
                 cols = st.columns([1, 3, 1, 1, 1, 1, 1])
                 cols[0].write(row['item_code'])
@@ -329,15 +329,17 @@ def run():
                 cols[2].write(row['qty_req'])
                 cols[3].write(row['uom'])
                 key = f"kit_{job}_{lot}_{row['item_code']}_{row['id']}"
-                default = row['qty_req']
+                min_qty = -999 if tx_type == "Return" else 0
+                default = max(row['qty_req'], min_qty)
                 kq = cols[4].number_input(
                     label="Kit Qty",
-                    min_value=-999 if tx_type == "Return" else 0,
+                    min_value=min_qty,
                     max_value=999,
                     value=st.session_state.kitting_inputs.get(key, default),
                     key=key,
                     label_visibility="collapsed"
                 )
+
                 cols[5].write(row['cost_code'])
                 cols[6].write(row['status'])
                 st.session_state.kitting_inputs[(job, lot, row['item_code'], row['id'])] = kq
@@ -355,7 +357,7 @@ def run():
 
                 for (j, l, code, pid), qty in kits.items():
                     if code not in existing and qty != 0:
-                        adjusted_qty = -abs(qty) if tx_type == "Return" else qty
+                        adjusted_qty = -abs(qty) if tx_type == "Return" else abs(qty)
                         insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
 
                 for r in rows:
