@@ -194,7 +194,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
             """, (job_number, lot_number, item_code, trans_type,
                   job_number, lot_number, item_code, trans_type))
                            
-                scan_ids = [r[0] for r in cur.fetchall()]
+            scan_ids = [r[0] for r in cur.fetchall()]
 
                 if scan_ids:
                     for sid in scan_ids:
