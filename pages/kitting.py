@@ -334,10 +334,13 @@ def run():
 
             kits = {}
             for k, qty in st.session_state.kitting_inputs.items():
-                if isinstance(k, tuple) and len(k) == 4:
-                    j, l, code, pid = k
-                    if j == job and l == lot:
-                        kits[(j, l, code, pid)] = qty
+                if isinstance(k, str) and k.startswith("kit_"):
+                    parts = k.split("_")
+                    if len(parts) >= 5:
+                        _, j, l, code, pid = parts
+                        if j == job and l == lot:
+                            kits[(j, l, code, int(pid))] = qty
+
 
             with get_db_cursor() as cur:
                 existing = [r['item_code'] for r in rows]
@@ -348,10 +351,11 @@ def run():
                         insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
 
                 for r in rows:
-                    new_qty = kits.get((job, lot, r['item_code'], r['id']), 0)
+                    new_qty = kits.get((job, lot, r['item_code'], r['id']), r['qty_req'])
                     adjusted_qty = -abs(new_qty) if tx_type == "Return" else new_qty
-                    if adjusted_qty == 0:
+                    if adjusted_qty == 0 and r['status'] != 'returned' and r['transaction_type'] != 'RETURNB':
                         delete_pulltag_line(cur, r['id'])
+
                     elif adjusted_qty != r['qty_req']:
                         update_pulltag_line(cur, r['id'], adjusted_qty)
                         
@@ -394,6 +398,15 @@ def run():
             st.session_state.scan_live = ""
 
     st.text_input("📷 Scan Item Here", key="scan_live", on_change=commit_scan)
+
+    if scans_needed:
+        st.subheader("🧾 Items Needing Scan")
+        for item_code, job_lots in scans_needed.items():
+            for (job, lot), qty in job_lots.items():
+                st.markdown(f"- `{item_code}` for **Job {job} / Lot {lot}** — **{qty}** scan(s) needed")
+    else:
+        st.info("No items require scanning for the selected Job/Lot.")
+
 
     # Display recent scans
     if st.session_state.scan_buffer:
