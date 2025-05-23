@@ -236,8 +236,11 @@ def run():
 
     st.title("📦 Job Kitting")
     if st.button("🔄 Reset Page"):
-        st.session_state.clear()
+        for key in ["job_lot_queue", "kitting_inputs"]:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
+
 
 
     tx_type = st.selectbox(
