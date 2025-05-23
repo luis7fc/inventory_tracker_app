@@ -302,12 +302,13 @@ def delete_pulltag_line(cur, line_id):
 from fpdf import FPDF
 import tempfile
 
-def generate_finalize_summary_pdf(summary_data, output_path="/mnt/data/final_scan_summary.pdf"):
+def generate_finalize_summary_pdf(summary_data):
     import os
+    import tempfile
     from fpdf import FPDF
 
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # Safe path in system temp directory
+    output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
