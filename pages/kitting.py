@@ -332,11 +332,12 @@ def run():
 
         if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
 
-            kits = {
-                (j, l, code, pid): qty
-                for (j, l, code, pid), qty in st.session_state.kitting_inputs.items()
-                if j == job and l == lot
-            }
+            kits = {}
+            for k, qty in st.session_state.kitting_inputs.items():
+                if isinstance(k, tuple) and len(k) == 4:
+                    j, l, code, pid = k
+                    if j == job and l == lot:
+                        kits[(j, l, code, pid)] = qty
 
             with get_db_cursor() as cur:
                 existing = [r['item_code'] for r in rows]
