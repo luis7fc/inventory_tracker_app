@@ -193,28 +193,29 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 ORDER BY scan_time
             """, (job_number, lot_number, item_code, trans_type,
                   job_number, lot_number, item_code, trans_type))
-                           
+
             scan_ids = [r[0] for r in cur.fetchall()]
 
-                if scan_ids:
-                    for sid in scan_ids:
-                        summary_rows.append({
-                            "job_number": job_number,
-                            "lot_number": lot_number,
-                            "item_code": item_code,
-                            "item_description": description,
-                            "scan_id": sid,
-                            "qty": 1
-                        })
-                else:
+            if scan_ids:
+                for sid in scan_ids:
                     summary_rows.append({
                         "job_number": job_number,
                         "lot_number": lot_number,
                         "item_code": item_code,
                         "item_description": description,
-                        "scan_id": None,
-                        "qty": abs(row['quantity'])  # from pulltag qty
+                        "scan_id": sid,
+                        "qty": 1
                     })
+            else:
+                summary_rows.append({
+                    "job_number": job_number,
+                    "lot_number": lot_number,
+                    "item_code": item_code,
+                    "item_description": description,
+                    "scan_id": None,
+                    "qty": abs(quantity)
+                })
+
 
 
     generate_finalize_summary_pdf(summary_rows)
