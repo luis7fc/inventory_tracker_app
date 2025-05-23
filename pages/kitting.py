@@ -228,11 +228,25 @@ def run():
     st.markdown(
         """
         <style>
-        [data-testid="stSidebarNav"] { display: none; }
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #888;
+            border-radius: 6px;
+            border: 3px solid #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
 
     st.title("📦 Job Kitting")
     if st.button("🔄 Reset Page"):
