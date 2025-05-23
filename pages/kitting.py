@@ -54,22 +54,18 @@ def generate_finalize_summary_pdf(summary_data):
     return output_path
 
 #2) Scan Verification -> Inventory upserts
+
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
                    scanned_by=None, progress_callback=None):
-    """
-    Process scans for Job Issues, Returns.
-    - Inserts transactions, scan_verifications
-    - Updates inventory, pulltags
-    - Generates downloadable summary PDF
-    """
+    from db import get_db_cursor, generate_finalize_summary_pdf
+    from psycopg2 import IntegrityError
+
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
     done = 0
-    summary_rows = []
 
     with get_db_cursor() as cur:
         for item_code, lots in scans_needed.items():
             total_needed = sum(lots.values())
-
             for (job, lot), need in lots.items():
                 assign = min(need, total_needed)
                 if assign == 0:
@@ -107,13 +103,9 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     if not sid:
                         raise Exception(f"Missing scan ID for {item_code} #{idx} in {job}-{lot}")
 
-                    cur.execute("""
-                        SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'
-                    """, (sid,))
+                    cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'", (sid,))
                     issues = cur.fetchone()[0]
-                    cur.execute("""
-                        SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'
-                    """, (sid,))
+                    cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'", (sid,))
                     returns = cur.fetchone()[0]
 
                     if trans_type == "Job Issue" and issues - returns > 0:
@@ -144,17 +136,6 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                         pct = int(done / total_scans * 100)
                         progress_callback(pct)
 
-                    summary_rows.append({
-                        "job": job,
-                        "lot": lot,
-                        "item_code": item_code,
-                        "qty": 1,
-                        "transaction_type": trans_type,
-                        "warehouse": warehouse,
-                        "location": loc_value,
-                        "scan_id": sid
-                    })
-
                 cur.execute("""
                     UPDATE pulltags
                     SET status = %s
@@ -172,8 +153,8 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 total_needed -= qty
                 if total_needed <= 0:
                     break
-                
-    # Finalize any untouched pulltags for this job/lot group
+
+    # Finalize all pulltags status for the job/lot group
     with get_db_cursor() as cur:
         for job, lot in job_lot_queue:
             if from_location:
@@ -189,8 +170,46 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Return'
                 """, (job, lot))
 
-    generate_finalize_summary_pdf(summary_rows)
+    # Build full pulltag summary
+    summary_rows = []
+    with get_db_cursor() as cur:
+        for job, lot in job_lot_queue:
+            cur.execute("""
+                SELECT job_number, lot_number, item_code, description
+                FROM pulltags
+                WHERE job_number = %s AND lot_number = %s
+                  AND transaction_type IN ('Job Issue', 'Return')
+            """, (job, lot))
+            rows = cur.fetchall()
 
+            for row in rows:
+                cur.execute("""
+                    SELECT scan_id
+                    FROM scan_verifications
+                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                    ORDER BY scan_time
+                """, (row['job_number'], row['lot_number'], row['item_code']))
+                scan_ids = [r[0] for r in cur.fetchall()]
+
+                if scan_ids:
+                    for sid in scan_ids:
+                        summary_rows.append({
+                            "job_number": row['job_number'],
+                            "lot_number": row['lot_number'],
+                            "item_code": row['item_code'],
+                            "item_description": row['description'],
+                            "scan_id": sid
+                        })
+                else:
+                    summary_rows.append({
+                        "job_number": row['job_number'],
+                        "lot_number": row['lot_number'],
+                        "item_code": row['item_code'],
+                        "item_description": row['description'],
+                        "scan_id": None
+                    })
+
+    generate_finalize_summary_pdf(summary_rows)
 
 
 # -----------------------------------------------------------------------------
