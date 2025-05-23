@@ -1,17 +1,197 @@
 import streamlit as st
 from fpdf import FPDF
 import tempfile
+from psycopg2 import IntegrityError
 from db import (
     get_pulltag_rows,
-    finalize_scans,
     submit_kitting,
     get_db_cursor,
     insert_pulltag_line,
     update_pulltag_line,
     delete_pulltag_line,
-    generate_finalize_summary_pdf
 )
 import os
+
+#Helper Functions:
+
+#1) Generate PDF Function
+
+def generate_finalize_summary_pdf(summary_data):
+    import os
+    import tempfile
+    from fpdf import FPDF
+
+    output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+
+    pdf.cell(200, 10, txt="CRS Final Scan Summary Report", ln=True, align="C")
+    pdf.ln(10)
+
+    headers = ["Job Number", "Lot Number", "Item Code", "Description", "Scan ID"]
+    col_widths = [30, 30, 30, 60, 40]
+
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 10, header, border=1)
+    pdf.ln()
+
+    for row in summary_data:
+        row_data = [
+            row.get("job_number", ""),
+            row.get("lot_number", ""),
+            row.get("item_code", ""),
+            row.get("item_description", ""),
+            row.get("scan_id") or "- not scanned -"
+        ]
+        for i, val in enumerate(row_data):
+            pdf.cell(col_widths[i], 10, str(val), border=1)
+        pdf.ln()
+
+    pdf.output(output_path)
+    return output_path
+
+#2) Scan Verification -> Inventory upserts
+def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
+                   scanned_by=None, progress_callback=None):
+    """
+    Process scans for Job Issues, Returns.
+    - Inserts transactions, scan_verifications
+    - Updates inventory, pulltags
+    - Generates downloadable summary PDF
+    """
+    total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
+    done = 0
+    summary_rows = []
+
+    with get_db_cursor() as cur:
+        for item_code, lots in scans_needed.items():
+            total_needed = sum(lots.values())
+
+            for (job, lot), need in lots.items():
+                assign = min(need, total_needed)
+                if assign == 0:
+                    continue
+
+                if from_location and not to_location:
+                    trans_type = "Job Issue"
+                    loc_field, loc_value = "from_location", from_location
+                    qty = assign
+                elif to_location and not from_location:
+                    trans_type = "Return"
+                    loc_field, loc_value = "to_location", to_location
+                    qty = abs(assign)
+                else:
+                    raise ValueError("finalize_scans requires exactly one of from/to_location")
+
+                cur.execute("""
+                    SELECT warehouse FROM pulltags
+                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                    LIMIT 1
+                """, (job, lot, item_code))
+                warehouse = cur.fetchone()[0]
+                sb = scanned_by
+
+                cur.execute(f"""
+                    INSERT INTO transactions (
+                        transaction_type, date, warehouse, {loc_field},
+                        job_number, lot_number, item_code, quantity, user_id
+                    ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
+                """, (trans_type, warehouse, loc_value, job, lot, item_code, qty, sb))
+
+                for idx in range(1, qty + 1):
+                    key = f"scan_{job}_{lot}_{item_code}_{idx}"
+                    sid = scan_inputs.get(key, "").strip()
+                    if not sid:
+                        raise Exception(f"Missing scan ID for {item_code} #{idx} in {job}-{lot}")
+
+                    cur.execute("""
+                        SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'
+                    """, (sid,))
+                    issues = cur.fetchone()[0]
+                    cur.execute("""
+                        SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'
+                    """, (sid,))
+                    returns = cur.fetchone()[0]
+
+                    if trans_type == "Job Issue" and issues - returns > 0:
+                        raise Exception(f"Scan {sid} already issued.")
+                    elif trans_type == "Return" and issues > 0 and returns >= issues:
+                        raise Exception(f"Scan {sid} already returned.")
+
+                    try:
+                        cur.execute("""
+                            INSERT INTO scan_verifications (
+                                item_code, scan_id, job_number, lot_number,
+                                scan_time, location, transaction_type, warehouse, scanned_by
+                            ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
+                        """, (item_code, sid, job, lot, loc_value, trans_type, warehouse, sb))
+                    except IntegrityError:
+                        raise Exception(f"Duplicate scan ID '{sid}' detected — already logged. Please use a new or properly returned scan.")
+
+                    if trans_type == "Return":
+                        cur.execute("""
+                            INSERT INTO current_scan_location (scan_id, item_code, location)
+                            VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
+                        """, (sid, item_code, loc_value))
+                    else:
+                        cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (sid,))
+
+                    done += 1
+                    if progress_callback:
+                        pct = int(done / total_scans * 100)
+                        progress_callback(pct)
+
+                    summary_rows.append({
+                        "job": job,
+                        "lot": lot,
+                        "item_code": item_code,
+                        "qty": 1,
+                        "transaction_type": trans_type,
+                        "warehouse": warehouse,
+                        "location": loc_value,
+                        "scan_id": sid
+                    })
+
+                cur.execute("""
+                    UPDATE pulltags
+                    SET status = %s
+                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                """, ('kitted' if trans_type == 'Job Issue' else 'returned', job, lot, item_code))
+
+                delta = qty if trans_type == "Return" else -qty
+                cur.execute("""
+                    INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (item_code, location, warehouse) DO UPDATE
+                    SET quantity = current_inventory.quantity + EXCLUDED.quantity
+                """, (item_code, loc_value, delta, warehouse))
+
+                total_needed -= qty
+                if total_needed <= 0:
+                    break
+                
+    # Finalize any untouched pulltags for this job/lot group
+    with get_db_cursor() as cur:
+        for job, lot in job_lot_queue:
+            if from_location:
+                cur.execute("""
+                    UPDATE pulltags
+                    SET status = 'kitted'
+                    WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Job Issue'
+                """, (job, lot))
+            elif to_location:
+                cur.execute("""
+                    UPDATE pulltags
+                    SET status = 'returned'
+                    WHERE job_number = %s AND lot_number = %s AND transaction_type = 'Return'
+                """, (job, lot))
+
+    generate_finalize_summary_pdf(summary_rows)
+
+
 
 # -----------------------------------------------------------------------------
 # Main Streamlit App Entry
@@ -243,8 +423,8 @@ def run():
                             file_name="final_scan_summary.pdf",
                             mime="application/pdf"
                         )
-                    st.info("You may now download the summary and click below to refresh the page.")
-                    if st.button("Reset Page"):
-                        st.rerun()
+                    st.info("You may now download the summary and optionally reset the page.")
+                    st.button("🔄 Reset Page", on_click=st.rerun)
 
-# End of job_kitting.py
+
+                # End of job_kitting.py
