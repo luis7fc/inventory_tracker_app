@@ -291,9 +291,11 @@ def run():
             st.info("No pull-tags found for this combination.")
             continue
 
-        if any(r['status'] in ('kitted', 'processed') for r in rows):
-            st.warning(f"Job {job}, Lot {lot} is locked from edits (status: kitted/processed).")
+        # Only block edits if it's an Issue and the job/lot is already kitted/processed
+        if tx_type == "Issue" and any(r['status'] in ('kitted', 'processed') for r in rows):
+            st.warning(f"Job {job}, Lot {lot} is locked from Issue edits (status: kitted/processed).")
             continue
+
 
         headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
         with st.container():
