@@ -367,13 +367,13 @@ def run():
             )
             for item_code, qty in cur.fetchall():
                 scans_needed.setdefault(item_code, {}).setdefault((job, lot), 0)
-                scans_needed[item_code][(job, lot)] += qty
+                scans_needed[item_code][(job, lot)] += abs(qty)
 
     if scans_needed:
         st.markdown("---")
         st.subheader("🔍 Scan Collection")
         scan_inputs = {}
-        for item_code, lots in scans_needed.items():
+        for item_code, lots in scans_needed.items():s
             for (job, lot), qty in lots.items():
                 st.write(f"**{item_code} — {job}/{lot}** — Total Scans: {qty}")
                 for i in range(1, qty + 1):
