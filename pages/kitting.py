@@ -17,22 +17,19 @@ import os
 #1) Generate PDF Function
 
 def generate_finalize_summary_pdf(summary_data):
-    import os
-    import tempfile
-    from fpdf import FPDF
 
     output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
 
-    pdf = FPDF()
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", size=10)
 
-    pdf.cell(200, 10, txt="CRS Final Scan Summary Report", ln=True, align="C")
-    pdf.ln(10)
+    pdf.cell(270, 10, txt="CRS Final Scan Summary Report", ln=True, align="C")
+    pdf.ln(5)
 
-    headers = ["Job Number", "Lot Number", "Item Code", "Description", "Scan ID"]
-    col_widths = [30, 30, 30, 60, 40]
+    headers = ["Job Number", "Lot Number", "Item Code", "Description", "Scan ID", "Qty"]
+    col_widths = [35, 30, 30, 100, 50, 20]
 
     for i, header in enumerate(headers):
         pdf.cell(col_widths[i], 10, header, border=1)
@@ -44,7 +41,8 @@ def generate_finalize_summary_pdf(summary_data):
             row.get("lot_number", ""),
             row.get("item_code", ""),
             row.get("item_description", ""),
-            row.get("scan_id") or "- not scanned -"
+            row.get("scan_id") or "- not scanned -",
+            str(row.get("qty", 1))
         ]
         for i, val in enumerate(row_data):
             pdf.cell(col_widths[i], 10, str(val), border=1)
@@ -52,6 +50,7 @@ def generate_finalize_summary_pdf(summary_data):
 
     pdf.output(output_path)
     return output_path
+
 
 #2) Scan Verification -> Inventory upserts
 
@@ -171,22 +170,30 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
     # Build full pulltag summary
     summary_rows = []
     with get_db_cursor() as cur:
-        for job, lot in job_lot_queue:
-            cur.execute("""
-                SELECT job_number, lot_number, item_code, description
-                FROM pulltags
-                WHERE job_number = %s AND lot_number = %s
-                  AND transaction_type IN ('Job Issue', 'Return')
-            """, (job, lot))
-            rows = cur.fetchall()
+        cur.execute("""
+            SELECT job_number, lot_number, item_code, description, quantity
+            FROM pulltags
+            WHERE job_number = %s AND lot_number = %s
+              AND transaction_type IN ('Job Issue', 'Return')
+        """, (job, lot))
+        rows = cur.fetchall()
 
-            for job_number, lot_number, item_code, description in rows:
-                cur.execute("""
-                    SELECT scan_id
-                    FROM scan_verifications
-                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                    ORDER BY scan_time
-                """, (job_number, lot_number, item_code))
+        for job_number, lot_number, item_code, description, quantity in rows:
+            cur.execute("""
+                SELECT scan_id
+                FROM scan_verifications
+                WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                  AND transaction_type = %s
+                  AND scan_time >= (
+                      SELECT MAX(date)
+                      FROM transactions
+                      WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                        AND transaction_type = %s
+                  )
+                ORDER BY scan_time
+            """, (job_number, lot_number, item_code, trans_type,
+                  job_number, lot_number, item_code, trans_type))
+                           
                 scan_ids = [r[0] for r in cur.fetchall()]
 
                 if scan_ids:
@@ -196,7 +203,8 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                             "lot_number": lot_number,
                             "item_code": item_code,
                             "item_description": description,
-                            "scan_id": sid
+                            "scan_id": sid,
+                            "qty": 1
                         })
                 else:
                     summary_rows.append({
@@ -204,8 +212,10 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                         "lot_number": lot_number,
                         "item_code": item_code,
                         "item_description": description,
-                        "scan_id": None
+                        "scan_id": None,
+                        "qty": abs(row['quantity'])  # from pulltag qty
                     })
+
 
     generate_finalize_summary_pdf(summary_rows)
 
@@ -224,6 +234,10 @@ def run():
     )
 
     st.title("📦 Job Kitting")
+    if st.button("🔄 Reset Page"):
+        st.session_state.clear()
+        st.rerun()
+
 
     tx_type = st.selectbox(
         "Transaction Type",
@@ -443,8 +457,7 @@ def run():
                             file_name="final_scan_summary.pdf",
                             mime="application/pdf"
                         )
-                    st.info("You may now download the summary and optionally reset the page.")
-                    st.button("🔄 Reset Page", on_click=st.rerun)
+                    st.info("You may now download the summary.")
 
 
                 # End of job_kitting.py
