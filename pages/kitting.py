@@ -57,8 +57,6 @@ def generate_finalize_summary_pdf(summary_data):
 
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
                    scanned_by=None, progress_callback=None):
-    from db import get_db_cursor, generate_finalize_summary_pdf
-    from psycopg2 import IntegrityError
 
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
     done = 0
