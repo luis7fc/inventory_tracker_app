@@ -59,6 +59,11 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
   
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
     done = 0
+    expected_count = sum(qty for lots in scans_needed.values() for qty in lots.values())
+    actual_count = len(scan_inputs)
+
+    if actual_count != expected_count:
+        raise Exception(f"Expected {expected_count} scans but received {actual_count}. Please recheck scan list.")
 
     with get_db_cursor() as cur:
         for item_code, lots in scans_needed.items():
@@ -95,8 +100,9 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 """, (trans_type, warehouse, loc_value, job, lot, item_code, qty, sb))
 
                 for idx in range(1, qty + 1):
-                    key = f"scan_{job}_{lot}_{item_code}_{idx}"
-                    sid = scan_inputs.get(key, "").strip()
+                    # Sequential flat key scheme
+                    sid = scan_inputs.get(f"scan_{done + 1}", "").strip()
+                    
                     if not sid:
                         raise Exception(f"Missing scan ID for {item_code} #{idx} in {job}-{lot}")
 
@@ -437,71 +443,77 @@ def run():
                 scans_needed.setdefault(item_code, {}).setdefault((job, lot), 0)
                 scans_needed[item_code][(job, lot)] += abs(qty)
 
-    MAX_VISIBLE_SCANS = 20  # limit for UI rendering
+    MAX_SCAN_DISPLAY = 20
 
-    if scans_needed:
-        st.markdown("---")
-        st.subheader("🔍 Scan Collection")
-        scan_inputs = {}
+    st.markdown("---")
+    st.subheader("🔍 Live Scan Buffer")
 
-        for item_code, lots in scans_needed.items():
-            for (job, lot), qty in lots.items():
-                st.write(f"**{item_code} — {job}/{lot}** — Total Scans: {qty}")
+    # Initialize scan buffer
+    if "scan_buffer" not in st.session_state:
+        st.session_state.scan_buffer = []
 
-                show_all_key = f"show_all_scans_{job}_{lot}_{item_code}"
-                show_all = st.checkbox("Show all scan fields", key=show_all_key) if qty > MAX_VISIBLE_SCANS else True
-                visible_range = range(1, qty + 1) if show_all else range(qty - MAX_VISIBLE_SCANS + 1, qty + 1)
+    # Input for new scan
+    new_scan = st.text_input("📷 Scan Item Here", key="scan_live")
 
-                for i in visible_range:
-                    key = f"scan_{job}_{lot}_{item_code}_{i}"
-                    scan_inputs[key] = st.text_input(f"Scan {i}", key=key)
+    if new_scan:
+        st.session_state.scan_buffer.append(new_scan.strip())
+        st.session_state.scan_live = ""  # clear input for next scan
 
-        if st.button("Finalize Scans"):
-            if not location:
-                st.error("Please enter a Location before finalizing scans.")
-            else:
-                sb = st.session_state.user
-                progress_bar = st.progress(0)
-                with st.spinner("Processing scans…"):
-                    def update_progress(pct: int):
-                        progress_bar.progress(pct)
+    # Display recent scans
+    if st.session_state.scan_buffer:
+        st.caption(f"Last {min(len(st.session_state.scan_buffer), MAX_SCAN_DISPLAY)} of {len(st.session_state.scan_buffer)} scans:")
+        for idx, scan in enumerate(st.session_state.scan_buffer[-MAX_SCAN_DISPLAY:], 1):
+            st.text(f"{idx}. {scan}")
+    else:
+        st.info("No scans yet. Start by scanning items above.")
 
-                    if tx_type == "Issue":
-                        finalize_scans(
-                            scans_needed,
-                            scan_inputs,
-                            st.session_state.job_lot_queue,
-                            from_location=location,
-                            to_location=None,
-                            scanned_by=sb,
-                            progress_callback=update_progress
-                        )
-                    else:
-                        finalize_scans(
-                            scans_needed,
-                            scan_inputs,
-                            st.session_state.job_lot_queue,
-                            from_location=None,
-                            to_location=location,
-                            scanned_by=sb,
-                            progress_callback=update_progress
-                        )
+    # Finalize Scans (maps scan_buffer into scan_inputs dict)
+    if st.button("Finalize Scans"):
+        if not location:
+            st.error("Please enter a Location before finalizing scans.")
+        else:
+            scan_inputs = {}
+            for idx, sid in enumerate(st.session_state.scan_buffer, 1):
+                # Use a generic key scheme for now; backend finalizer logic will need scan_count vs expected check
+                scan_inputs[f"scan_{idx}"] = sid
 
-                st.success("Scans processed and inventory updated.")
-                
+            sb = st.session_state.user
+            progress_bar = st.progress(0)
+            with st.spinner("Processing scans…"):
+                def update_progress(pct: int):
+                    progress_bar.progress(pct)
 
-                summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
+                if tx_type == "Issue":
+                    finalize_scans(
+                        scans_needed,
+                        scan_inputs,
+                        st.session_state.job_lot_queue,
+                        from_location=location,
+                        to_location=None,
+                        scanned_by=sb,
+                        progress_callback=update_progress
+                    )
+                else:
+                    finalize_scans(
+                        scans_needed,
+                        scan_inputs,
+                        st.session_state.job_lot_queue,
+                        from_location=None,
+                        to_location=location,
+                        scanned_by=sb,
+                        progress_callback=update_progress
+                    )
 
+            st.success("Scans processed and inventory updated.")
 
-                if os.path.exists(summary_path):
-                    with open(summary_path, "rb") as f:
-                        st.download_button(
-                            label="📄 Download Final Scan Summary",
-                            data=f,
-                            file_name="final_scan_summary.pdf",
-                            mime="application/pdf"
-                        )
-                    st.info("You may now download the summary.")
+            summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
+            if os.path.exists(summary_path):
+                with open(summary_path, "rb") as f:
+                    st.download_button(
+                        label="📄 Download Final Scan Summary",
+                        data=f,
+                        file_name="final_scan_summary.pdf",
+                        mime="application/pdf"
+                    )
+                st.info("You may now download the summary.")
 
-
-                # End of job_kitting.py
