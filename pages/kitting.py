@@ -57,6 +57,9 @@ def generate_finalize_summary_pdf(summary_data):
 
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
                    scanned_by=None, progress_callback=None):
+    from db import get_db_cursor
+    from psycopg2 import IntegrityError
+    from kitting import generate_finalize_summary_pdf  # adjust if you moved it elsewhere
 
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
     done = 0
@@ -180,35 +183,34 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
             """, (job, lot))
             rows = cur.fetchall()
 
-            for row in rows:
+            for job_number, lot_number, item_code, description in rows:
                 cur.execute("""
                     SELECT scan_id
                     FROM scan_verifications
                     WHERE job_number = %s AND lot_number = %s AND item_code = %s
                     ORDER BY scan_time
-                """, (row['job_number'], row['lot_number'], row['item_code']))
+                """, (job_number, lot_number, item_code))
                 scan_ids = [r[0] for r in cur.fetchall()]
 
                 if scan_ids:
                     for sid in scan_ids:
                         summary_rows.append({
-                            "job_number": row['job_number'],
-                            "lot_number": row['lot_number'],
-                            "item_code": row['item_code'],
-                            "item_description": row['description'],
+                            "job_number": job_number,
+                            "lot_number": lot_number,
+                            "item_code": item_code,
+                            "item_description": description,
                             "scan_id": sid
                         })
                 else:
                     summary_rows.append({
-                        "job_number": row['job_number'],
-                        "lot_number": row['lot_number'],
-                        "item_code": row['item_code'],
-                        "item_description": row['description'],
+                        "job_number": job_number,
+                        "lot_number": lot_number,
+                        "item_code": item_code,
+                        "item_description": description,
                         "scan_id": None
                     })
 
     generate_finalize_summary_pdf(summary_rows)
-
 
 # -----------------------------------------------------------------------------
 # Main Streamlit App Entry
