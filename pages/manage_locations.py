@@ -4,14 +4,6 @@ from db import get_db_cursor, get_all_locations
 
 
 def run():
-    st.markdown(
-        """
-        <style>
-        [data-testid="stSidebarNav"] { display: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
     st.header("Manage Warehouse Locations")
 
