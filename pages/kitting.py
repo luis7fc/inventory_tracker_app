@@ -186,98 +186,62 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 def run():
     st.markdown("""
     <style>
-    /* Ensure full-page scrollability */
+    /* Let the root elements scroll */
     html, body {
         height: 100%;
         margin: 0;
-        overflow: hidden;
-    }
-    
-    body > div {
-        height: 100vh;
         overflow-y: auto !important;
-        overscroll-behavior: contain;
-        scroll-behavior: smooth;
     }
     
-    /* Target Streamlit's main app container */
-    section.main {
+    /* Ensure Streamlit app area respects vertical scroll */
+    section.main, div[data-testid="stApp"] {
+        overflow-y: auto !important;
         height: 100vh !important;
-        overflow-y: auto !important;
-        padding-bottom: 20px;
-        box-sizing: border-box;
+        contain: none !important;
     }
     
-    /* Ensure all containers within the main section respect scrolling */
-    div.stApp > div {
+    /* Allow internal dynamic blocks to grow/scroll */
+    div[data-testid="stVerticalBlock"] > div {
+        min-height: 0 !important;
         overflow: visible !important;
     }
     
-    /* Handle dynamic containers (e.g., job/lot sections, scan buffer) */
-    div[data-testid="stVerticalBlock"] {
-        min-height: auto !important;
-        overflow: visible !important;
-    }
-    
-    /* Fix input fields and tables to prevent overflow */
-    .stTextInput, .stNumberInput, .stSelectbox {
-        width: 100%;
-        max-width: 100%;
-        box-sizing: border-box;
-    }
-    
-    /* Ensure tables and columns don’t overflow */
+    /* Prevent container scroll traps */
     div[data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap;
+        flex-wrap: wrap !important;
         overflow-x: hidden !important;
     }
     
-    /* Scrollbar styling for better visibility */
-    ::-webkit-scrollbar {
-        width: 14px;
-        height: 14px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: #f5f5f5;
-        border-radius: 8px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: #666;
-        border-radius: 8px;
-        border: 3px solid #f5f5f5;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: #444;
-    }
-    
-    /* Improve text visibility for inputs and labels */
-    label, .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > select {
+    /* Force visible text in input fields */
+    label, input, select {
         color: #111 !important;
-        background-color: #fdfdfd !important;
-        border-radius: 4px;
+        background: transparent !important;
     }
     
-    /* Ensure form containers don’t break layout */
-    div[data-testid="stForm"] {
-        overflow: visible !important;
-        padding-bottom: 10px;
+    /* Ensure inputs don't shrink or overflow */
+    .stTextInput, .stNumberInput, .stSelectbox {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
     }
     
-    /* Responsive adjustments for smaller screens */
-    @media (max-width: 768px) {
-        section.main {
-            padding: 10px;
-        }
-        div[data-testid="stHorizontalBlock"] > div {
-            flex: 1 1 100%;
-            max-width: 100%;
-        }
+    /* Ensure all primary app blocks fill available space */
+    section.main > div {
+        min-height: 100% !important;
+        box-sizing: border-box;
+    }
+    
+    /* Scrollbar visuals */
+    ::-webkit-scrollbar {
+        width: 12px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background-color: #666;
+        border-radius: 6px;
     }
     </style>
     """, unsafe_allow_html=True)
+    
 
 
 
