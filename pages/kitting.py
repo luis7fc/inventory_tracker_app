@@ -186,64 +186,85 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 def run():
     st.markdown("""
     <style>
-    /* Let the root elements scroll */
+    /* Reset root elements for full scrolling */
     html, body {
         height: 100%;
         margin: 0;
+        padding: 0;
         overflow-y: auto !important;
-    }
-    
-    /* Ensure Streamlit app area respects vertical scroll */
-    section.main, div[data-testid="stApp"] {
-        overflow-y: auto !important;
-        height: 100vh !important;
-        contain: none !important;
-    }
-    
-    /* Allow internal dynamic blocks to grow/scroll */
-    div[data-testid="stVerticalBlock"] > div {
-        min-height: 0 !important;
-        overflow: visible !important;
-    }
-    
-    /* Prevent container scroll traps */
-    div[data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap !important;
         overflow-x: hidden !important;
     }
     
-    /* Force visible text in input fields */
-    label, input, select {
-        color: #111 !important;
-        background: transparent !important;
+    /* Target Streamlit’s main app container with high specificity */
+    div[data-testid="stApp"] > section.main {
+        height: auto !important; /* Allow natural content height */
+        min-height: 100vh !important; /* Ensure at least viewport height */
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        contain: none !important;
+        box-sizing: border-box;
     }
     
-    /* Ensure inputs don't shrink or overflow */
+    /* Ensure all nested containers allow scrolling */
+    div[data-testid="stVerticalBlock"],
+    div[data-testid="stHorizontalBlock"],
+    div[data-testid="stForm"] {
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        max-width: 100% !important;
+    }
+    
+    /* Force nested content to expand and trigger scrolling */
+    div[data-testid="stVerticalBlock"] > div,
+    section.main > div {
+        height: auto !important;
+        min-height: 100% !important;
+        overflow: visible !important;
+        box-sizing: border-box;
+    }
+    
+    /* Prevent input fields from breaking layout */
     .stTextInput, .stNumberInput, .stSelectbox {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
     }
     
-    /* Ensure all primary app blocks fill available space */
-    section.main > div {
-        min-height: 100% !important;
-        box-sizing: border-box;
+    label, input, select {
+        color: #111 !important;
+        background: transparent !important;
     }
     
-    /* Scrollbar visuals */
+    /* Custom scrollbar for visibility */
     ::-webkit-scrollbar {
         width: 12px;
     }
+    ::-webkit-scrollbar-track {
+        background: #f5f5f5;
+    }
     ::-webkit-scrollbar-thumb {
-        background-color: #666;
+        background: #666;
         border-radius: 6px;
+        border: 3px solid #f5f5f5;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #444;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        div[data-testid="stApp"] > section.main {
+            padding: 10px !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div {
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
     
-
-
 
     st.title("📦 Job Kitting")
     if st.button("🔄 Reset Page"):
