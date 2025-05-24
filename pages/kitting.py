@@ -15,8 +15,6 @@ from db import (
 import os
 
 #Helper Functions:
-pacific_now = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
-
 #1) Generate PDF Function
 
 def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=None):
@@ -59,7 +57,7 @@ def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=No
     return output_path
 
 
-#2) Scan Verification -> Inventory upserts
+#2) Scan Verification -> Inventory upserts -> pdf construct
 def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
                    scanned_by=None, progress_callback=None):
 
