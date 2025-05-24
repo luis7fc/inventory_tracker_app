@@ -261,6 +261,7 @@ def run():
                         adjusted_qty,
                         location,
                         transaction_type="Job Issue" if tx_type == "Issue" else "Return"
+                        note="Updated"
                     )
                     inserted = True
             if not inserted:
@@ -342,7 +343,7 @@ def run():
                 for (j, l, code, pid), qty in kits.items():
                     if code not in existing and qty != 0:
                         adjusted_qty = -abs(qty) if tx_type == "Return" else abs(qty)
-                        insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return")
+                        insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return", note="Updated")
 
                 for r in rows:
                     new_qty = kits.get((job, lot, r['item_code'], r['id']), r['qty_req'])
@@ -351,7 +352,7 @@ def run():
                         delete_pulltag_line(cur, r['id'])
 
                     elif adjusted_qty != r['qty_req']:
-                        update_pulltag_line(cur, r['id'], adjusted_qty)
+                        update_pulltag_line(cur, r['id'], adjusted_qty, note="Updated")
                         
                 st.success(f"Kitting updated for {job}-{lot}.")
                             
@@ -429,7 +430,13 @@ def run():
         def commit_scan_guided():
             val = st.session_state.scan_live.strip()
             if val and next_item:
-                st.session_state.scan_buffer.append(("UNK", "UNK", next_item, val))
+                if st.session_state.job_lot_queue:
+                    job, lot = st.session_state.job_lot_queue[0]
+                else:
+                    job, lot = "UNK", "UNK"
+                
+                st.session_state.scan_buffer.append((job, lot, next_item, val))
+
                 st.session_state.scan_live = ""
     
         st.text_input("📷 Scan Item Here", key="scan_live", on_change=commit_scan_guided)
@@ -482,17 +489,35 @@ def run():
                     cur.execute("SELECT item_code, item_description FROM items_master")
                     item_map = dict(cur.fetchall())
 
-                generate_finalize_summary_pdf([{
-                    "job_number": job,
-                    "lot_number": lot,
-                    "item_code": item_code,
-                    "item_description": item_map.get(item_code, ""),
-                    "scan_id": sid,
-                    "qty": 1
-                } for job, lot, item_code, sid in st.session_state.scan_buffer],
-                verified_by=sb,
-                verified_on=datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
+                # Create lookup from scan_buffer
+                scan_map = {
+                    (j, l, code): sid
+                    for j, l, code, sid in st.session_state.scan_buffer
+                }
+                
+                # Build full pulltag summary with scan IDs if available
+                summary_rows = []
+                for job, lot in st.session_state.job_lot_queue:
+                    for r in get_pulltag_rows(job, lot):
+                        if r["transaction_type"] not in ("Job Issue", "Return"):
+                            continue
+                        sid = scan_map.get((r["job_number"], r["lot_number"], r["item_code"]), None)
+                        summary_rows.append({
+                            "job_number": r["job_number"],
+                            "lot_number": r["lot_number"],
+                            "item_code": r["item_code"],
+                            "item_description": r["description"],
+                            "scan_id": sid,
+                            "qty": abs(r["qty_req"])
+                        })
+                
+                # Generate PDF using full pulltag data
+                generate_finalize_summary_pdf(
+                    summary_rows,
+                    verified_by=sb,
+                    verified_on=datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
                 )
+
 
                 summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
                 if os.path.exists(summary_path):
