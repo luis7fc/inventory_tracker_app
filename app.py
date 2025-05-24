@@ -36,19 +36,21 @@ def add_background(png_file: str) -> None:
 
     st.markdown(f"""
     <style>
-    /* Root scroll fix */
+    /* Root scroll fix with smooth scrolling */
     html, body {{
         height: 100%;
         margin: 0;
         overflow-y: auto !important;
         overflow-x: hidden !important;
+        scroll-behavior: smooth !important; /* Enable smooth scrolling */
     }}
 
     /* Main scrollable layout */
     section.main {{
         min-height: 100vh !important;
         height: auto !important;
-        overflow-y: scroll !important;
+        overflow-y: auto !important; /* Use auto to prevent unnecessary scrollbars */
+        scroll-behavior: smooth !important; /* Smooth scrolling for main content */
         position: relative;
         z-index: 1;
         padding-bottom: 20px;
@@ -82,15 +84,21 @@ def add_background(png_file: str) -> None:
         backdrop-filter: blur(2px);
     }}
 
+    /* Hide sidebar navigation (redundant page selections) */
+    [data-testid="stSidebarNav"],
+    [data-testid="stSidebarNavItems"] {{
+        display: none !important; /* Hide sidebar navigation */
+    }}
+
+    /* Hide sidebar section title (duplicated page label) */
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] + div {{
+        display: none !important; /* Additional selector for robustness */
+    }}
+
     /* Global readable text */
     input, select, textarea, label {{
         color: #111 !important;
-
-    }}
-    /* Hide sidebar section title (the duplicated page label) */
-    section[data-testid="stSidebar"] h1 {{
-        display: none !important;
-
     }}
     h1, h2, h3, p,
     [data-testid="stMetricValue"],
@@ -103,7 +111,6 @@ def add_background(png_file: str) -> None:
     [data-testid="stMetric"] * {{
         color: #fff !important;
     }}
-
 
     /* Input contrast fix */
     .stTextInput input,
@@ -158,7 +165,6 @@ def add_background(png_file: str) -> None:
     </style>
     <div class="bg-div"></div>
     """, unsafe_allow_html=True)
-
 
 # --- Run Login ---
 login()
