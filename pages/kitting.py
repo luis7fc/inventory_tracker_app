@@ -184,15 +184,14 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 # -----------------------------------------------------------------------------
 
 def run():    
+    
     st.title("📦 Job Kitting")
     if st.button("🔄 Reset Page"):
-        for key in ["job_lot_queue", "kitting_inputs"]:
+        for key in ["job_lot_queue", "kitting_inputs", "scan_buffer","scan_live"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
-
-
-
+        
     tx_type = st.selectbox(
         "Transaction Type",
         ["Issue", "Return"],
