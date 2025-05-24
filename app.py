@@ -16,7 +16,6 @@ import pages.internal_movement      as internal_movement
 import pages.landing                as landing
 import pages.adjustments            as adjustments
 
-
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
 import pages.kitting                as kitting
@@ -84,16 +83,22 @@ def add_background(png_file: str) -> None:
         backdrop-filter: blur(2px);
     }}
 
-    /* Hide sidebar navigation (redundant page selections) */
-    [data-testid="stSidebarNav"],
-    [data-testid="stSidebarNavItems"] {{
-        display: none !important; /* Hide sidebar navigation */
+    /* Hide Streamlit's default sidebar navigation (redundant page selectors) */
+    [data-testid="stSidebarNav"] {{
+        display: none !important; /* Hide default Streamlit page navigation */
     }}
 
-    /* Hide sidebar section title (duplicated page label) */
-    section[data-testid="stSidebar"] h1,
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] + div {{
-        display: none !important; /* Additional selector for robustness */
+    /* Ensure custom sidebar content (e.g., radio buttons) is visible */
+    section[data-testid="stSidebar"] .stRadio {{
+        display: block !important; /* Explicitly show radio buttons */
+        margin-top: 1rem;
+    }}
+
+    /* Style sidebar title */
+    section[data-testid="stSidebar"] h1 {{
+        color: #FFFFFF !important;
+        text-shadow: 0 0 4px rgba(0,0,0,0.6);
+        margin-bottom: 1rem;
     }}
 
     /* Global readable text */
@@ -201,13 +206,11 @@ else:
 
 page_names = pages
 
-
 st.sidebar.title("📚 Menu")
 
 choice = st.sidebar.radio("", pages)
 
-
-#Route to the selected page
+# Route to the selected page
 if choice == "Home":
     landing.run()
 elif choice == "Receiving":
