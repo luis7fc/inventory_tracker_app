@@ -5,15 +5,6 @@ from db import get_all_users, create_user, delete_user, update_user_password
 
 
 def run():
-    st.markdown(
-        """
-        <style>
-        [data-testid="stSidebarNav"] { display: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     # Only admins can manage users
     if st.session_state.role != "admin":
         st.warning("Admin access required.")
