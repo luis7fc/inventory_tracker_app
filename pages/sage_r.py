@@ -30,7 +30,7 @@ def get_distinct_statuses() -> List[str]:
     with get_db_cursor() as cur:
         cur.execute("SELECT DISTINCT status FROM pulltags ORDER BY status;")
         return [r[0] for r in cur.fetchall()]
-        
+
 def query_pulltags(
     job_lot_pairs: Optional[List[Tuple[str, str]]] = None,
     tx_types: Optional[List[str]] = None,
@@ -49,7 +49,7 @@ def query_pulltags(
                    warehouse AS location,
                    transaction_type, status, last_updated
             FROM pulltags
-            WHERE (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN %(job_lot_pairs)s)
+            WHERE (%(job_lot_pairs)s IS NULL OR (ROW(job_number, lot_number)) = ANY(%(job_lot_pairs)s))
               AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
               AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
               AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
@@ -59,7 +59,7 @@ def query_pulltags(
         """
 
         cur.execute(sql, {
-            "job_lot_pairs": tuple(job_lot_pairs) if job_lot_pairs else None,
+            "job_lot_pairs": job_lot_pairs if job_lot_pairs else None,
             "tx_types": tx_types if tx_types else None,
             "statuses": statuses if statuses else None,
             "warehouses": warehouses if warehouses else None,
@@ -70,7 +70,8 @@ def query_pulltags(
         rows = cur.fetchall()
         cols = [desc.name for desc in cur.description]
     return pd.DataFrame(rows, columns=cols)
-    
+
+
 def save_changes_to_db(df: pd.DataFrame) -> None:
     with get_db_cursor() as cur:
         for r in df.itertuples():
