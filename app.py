@@ -28,96 +28,132 @@ import base64, pathlib
 import streamlit as st
 
 def add_background(png_file: str) -> None:
-    """Full-screen PNG background + white text + green buttons."""
+    """Unified background + scroll + theme injection."""
+    if not st.session_state.get("show_bg", True):
+        return
+
     img_path = pathlib.Path(__file__).with_suffix("").parent / png_file
     with open(img_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
 
-    st.markdown(
-        f"""
-        <style>
-        /* ───────────────────────── 1) BIG SIDEBAR TOGGLE ─────────────── */
-        button[aria-label="Collapse sidebar"],
-        button[aria-label="Expand sidebar"],
-        button[data-testid="collapsedControl"] {{
-            position: fixed !important;
-            top: 0.75rem; left: 0.75rem;
-            width: 40px !important; height: 40px !important;
-            padding: 0 !important;
-            background: rgba(10,14,30,0.85) !important;
-            border: 2px solid #00D67A !important;
-            border-radius: 50% !important;
-            box-shadow: 0 0 6px rgba(0,0,0,0.6);
-            z-index: 1003 !important;
-        }}
-        button[aria-label="Collapse sidebar"] svg,
-        button[aria-label="Expand sidebar"]  svg,
-        button[data-testid="collapsedControl"] svg {{
-            width: 24px !important; height: 24px !important;
-            stroke: #00D67A !important; stroke-width: 3;
-        }}
+    st.markdown(f"""
+    <style>
+    /* Full-page scroll unlocking */
+    html, body {{
+        height: 100%;
+        margin: 0;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+    }}
 
-        /* ────────────────────  SIDEBAR STYLE  ───────────────────── */
-        div[data-testid="stSidebarNav"],
-        section[data-testid="stSidebarNav"] {{            /* hide default nav */
-            display: none !important;
-        }}
-        section[data-testid="stSidebar"],
-        div[data-testid="stSidebar"] > div:first-child {{ /* tint bg */
-            background: rgba(10,14,30,0.85) !important;
-            backdrop-filter: blur(2px);
-        }}
+    section.main, div[data-testid="stApp"], .block-container {{
+        height: auto !important;
+        overflow-y: auto !important;
+        padding-bottom: 20px;
+        box-sizing: border-box;
+        background: transparent !important;
+    }}
 
+    /* Sidebar styling */
+    button[aria-label="Collapse sidebar"],
+    button[aria-label="Expand sidebar"],
+    button[data-testid="collapsedControl"] {{
+        position: fixed !important;
+        top: 0.75rem; left: 0.75rem;
+        width: 40px !important; height: 40px !important;
+        padding: 0 !important;
+        background: rgba(10,14,30,0.85) !important;
+        border: 2px solid #00D67A !important;
+        border-radius: 50% !important;
+        box-shadow: 0 0 6px rgba(0,0,0,0.6);
+        z-index: 1003 !important;
+    }}
+    button[aria-label="Collapse sidebar"] svg,
+    button[aria-label="Expand sidebar"]  svg,
+    button[data-testid="collapsedControl"] svg {{
+        width: 24px !important; height: 24px !important;
+        stroke: #00D67A !important; stroke-width: 3;
+    }}
 
-        /* ───────────────────────── 3) TOOLBARS & LAYOUT ─────────────── */
-        [data-testid="stToolbar"],
-        [data-testid="stHeader"] {{ background: transparent !important; box-shadow:none !important; }}
-        html, body,
-        [data-testid="stAppViewContainer"],
-        .block-container {{ background: transparent !important; }}
+    div[data-testid="stSidebarNav"],
+    section[data-testid="stSidebarNav"] {{
+        display: none !important;
+    }}
+    section[data-testid="stSidebar"],
+    div[data-testid="stSidebar"] > div:first-child {{
+        background: rgba(10,14,30,0.85) !important;
+        backdrop-filter: blur(2px);
+    }}
 
-        /* ───────────────────────── 4) GLOBAL TEXT COLOUR ────────────── */
-        h1, h2, h3, p,
-        [data-testid="stMetricValue"],
-        [data-testid="stMetricLabel"] {{
-            color: #FFFFFF !important;
-            text-shadow: 0 0 4px rgba(0,0,0,0.6);
-        }}
+    /* Toolbars and metric styles */
+    [data-testid="stToolbar"],
+    [data-testid="stHeader"] {{ background: transparent !important; box-shadow:none !important; }}
 
-        /* ───────────────────────── 5) BUTTON THEME ──────────────────── */
-        div.stButton > button,
-        div.stDownloadButton > button,
-        div.stForm > form button {{
-            background-color: #00B868 !important;
-            color: #FFFFFF !important;
-            border: none !important;
-            border-radius: 6px !important;
-            padding: 0.5rem 1.2rem !important;
-        }}
-        div.stButton > button:hover,
-        div.stDownloadButton > button:hover,
-        div.stForm > form button:hover {{
-            background-color: #00D67A !important;
-        }}
-        div.stButton > button:active,
-        div.stDownloadButton > button:active,
-        div.stForm > form button:active {{
-            transform: translateY(1px);
-        }}
+    h1, h2, h3, p,
+    [data-testid="stMetricValue"],
+    [data-testid="stMetricLabel"] {{
+        color: #FFFFFF !important;
+        text-shadow: 0 0 4px rgba(0,0,0,0.6);
+    }}
 
-        /* ───────────────────────── 6) HERO BACKGROUND ──────────────── */
-        .bg-div {{
-            position: fixed; inset: 0;
-            background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
-            background-size: cover !important;
-            z-index: 0 !important;
-        }}
-        </style>
+    /* Button theme */
+    div.stButton > button,
+    div.stDownloadButton > button,
+    div.stForm > form button {{
+        background-color: #00B868 !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 6px !important;
+        padding: 0.5rem 1.2rem !important;
+    }}
+    div.stButton > button:hover,
+    div.stDownloadButton > button:hover,
+    div.stForm > form button:hover {{
+        background-color: #00D67A !important;
+    }}
+    div.stButton > button:active,
+    div.stDownloadButton > button:active,
+    div.stForm > form button:active {{
+        transform: translateY(1px);
+    }}
 
-        <div class="bg-div"></div>
-        """,
-        unsafe_allow_html=True,
-    )
+    /* Input visibility and spacing */
+    label, .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stSelectbox > div > div > select {{
+        color: #333 !important;
+        background-color: #fff !important;
+        border-radius: 4px;
+    }}
+
+    /* Scrollbar appearance */
+    ::-webkit-scrollbar {{
+        width: 14px;
+        height: 14px;
+    }}
+    ::-webkit-scrollbar-track {{
+        background: #f5f5f5;
+        border-radius: 8px;
+    }}
+    ::-webkit-scrollbar-thumb {{
+        background: #666;
+        border-radius: 8px;
+        border: 3px solid #f5f5f5;
+    }}
+    ::-webkit-scrollbar-thumb:hover {{
+        background: #444;
+    }}
+
+    /* Hero background */
+    .bg-div {{
+        position: fixed; inset: 0;
+        background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
+        background-size: cover !important;
+        z-index: 0 !important;
+    }}
+    </style>
+    <div class="bg-div"></div>
+    """, unsafe_allow_html=True)
 
 
 # --- Run Login ---
