@@ -63,17 +63,30 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
     if actual_count != expected_count:
         raise Exception(f"Expected {expected_count} scans but received {actual_count}. Please recheck scan list.")
 
-    flat_scan_list = list(scan_inputs.values())
-    done = 0
+    #flat_scan_list = list(scan_inputs.values())
+    #done = 0
 
     with get_db_cursor() as cur:
+        # Group scan_inputs by item_code
+        scans_by_item = {}
+        for k, sid in scan_inputs.items():
+            if isinstance(k, str):
+                parts = k.split("_")
+                if len(parts) >= 3:
+                    item = parts[2]
+                    scans_by_item.setdefault(item, []).append(sid.strip())
+        
+        # Process per item_code
         for item_code, lots in scans_needed.items():
+            scan_list = scans_by_item.get(item_code, [])
+            scan_index = 0
+        
             total_needed = sum(lots.values())
             for (job, lot), need in lots.items():
                 assign = min(need, total_needed)
                 if assign == 0:
                     continue
-
+        
                 if from_location and not to_location:
                     trans_type = "Job Issue"
                     loc_field, loc_value = "from_location", from_location
@@ -84,7 +97,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     qty = abs(assign)
                 else:
                     raise ValueError("finalize_scans requires exactly one of from/to_location")
-
+        
                 cur.execute("""
                     SELECT warehouse FROM pulltags
                     WHERE job_number = %s AND lot_number = %s AND item_code = %s
@@ -92,31 +105,32 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                 """, (job, lot, item_code))
                 warehouse = cur.fetchone()[0]
                 sb = scanned_by
-
+        
                 cur.execute(f"""
                     INSERT INTO transactions (
                         transaction_type, date, warehouse, {loc_field},
                         job_number, lot_number, item_code, quantity, user_id
                     ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
                 """, (trans_type, warehouse, loc_value, job, lot, item_code, qty, sb))
-
+        
                 for idx in range(1, qty + 1):
-                    if done >= len(flat_scan_list):
-                        raise Exception(f"Expected more scans for {item_code} in {job}-{lot}")
-                    sid = flat_scan_list[done].strip()
+                    if scan_index >= len(scan_list):
+                        raise Exception(f"Not enough scans for item {item_code} — expected {qty}, got {scan_index}")
+                    sid = scan_list[scan_index]
+                    scan_index += 1
                     if not sid:
                         raise Exception(f"Missing scan ID for {item_code} #{idx} in {job}-{lot}")
-
+        
                     cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'", (sid,))
                     issues = cur.fetchone()[0]
                     cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'", (sid,))
                     returns = cur.fetchone()[0]
-
+        
                     if trans_type == "Job Issue" and issues - returns > 0:
                         raise Exception(f"Scan {sid} already issued.")
                     elif trans_type == "Return" and issues > 0 and returns >= issues:
                         raise Exception(f"Scan {sid} already returned.")
-
+        
                     try:
                         cur.execute("""
                             INSERT INTO scan_verifications (
@@ -125,8 +139,8 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                             ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
                         """, (item_code, sid, job, lot, loc_value, trans_type, warehouse, sb))
                     except IntegrityError:
-                        raise Exception(f"Duplicate scan ID '{sid}' detected — already logged. Please use a new or properly returned scan.")
-
+                        raise Exception(f"Duplicate scan ID '{sid}' detected — already logged.")
+        
                     if trans_type == "Return":
                         cur.execute("""
                             INSERT INTO current_scan_location (scan_id, item_code, location)
@@ -134,18 +148,17 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                         """, (sid, item_code, loc_value))
                     else:
                         cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (sid,))
-
-                    done += 1
+        
                     if progress_callback:
-                        pct = int(done / total_scans * 100)
+                        pct = int((scan_index / total_scans) * 100)
                         progress_callback(pct)
-
+        
                 cur.execute("""
                     UPDATE pulltags
                     SET status = %s
                     WHERE job_number = %s AND lot_number = %s AND item_code = %s
                 """, ('kitted' if trans_type == 'Job Issue' else 'returned', job, lot, item_code))
-
+        
                 delta = qty if trans_type == "Return" else -qty
                 cur.execute("""
                     INSERT INTO current_inventory (item_code, location, quantity, warehouse)
@@ -153,7 +166,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     ON CONFLICT (item_code, location, warehouse) DO UPDATE
                     SET quantity = current_inventory.quantity + EXCLUDED.quantity
                 """, (item_code, loc_value, delta, warehouse))
-
+        
                 total_needed -= qty
                 if total_needed <= 0:
                     break
