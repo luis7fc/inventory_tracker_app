@@ -141,6 +141,12 @@ def run() -> None:
     ss = st.session_state
 
     st.title("📤 Sage Pull-Tag Export")
+    if st.button("🔄 Reset Page"):
+        for key in ["job_lot_queue", "job_buffer", "lot_buffer", "show_grid", "pulltag_df", "edited_df"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
 
     # ── 1) Job / Lot queue form ──────────────────────────────────────────
     with st.form("job_lot_form", clear_on_submit=True):
