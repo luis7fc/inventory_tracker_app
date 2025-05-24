@@ -112,15 +112,6 @@ def parse_and_insert(txt_file):
 
 
 def run():
-    st.markdown(
-        """
-        <style>
-        [data-testid="stSidebarNav"] { display: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.title("📂 Bulk Pull-tag TXT Upload")
 
     if 'processed_files' not in st.session_state:
