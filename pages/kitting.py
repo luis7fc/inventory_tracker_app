@@ -1,4 +1,6 @@
 import streamlit as st
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fpdf import FPDF
 import tempfile
 from psycopg2 import IntegrityError
@@ -13,10 +15,11 @@ from db import (
 import os
 
 #Helper Functions:
+pacific_now = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
 
 #1) Generate PDF Function
 
-def generate_finalize_summary_pdf(summary_data):
+def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=None):
 
     output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
 
@@ -24,9 +27,13 @@ def generate_finalize_summary_pdf(summary_data):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", size=10)
-
     pdf.cell(270, 10, txt="CRS Final Scan Summary Report", ln=True, align="C")
     pdf.ln(5)
+    if verified_by or verified_on:
+        user_text = f"Verified By: {verified_by or 'N/A'}"
+        time_text = f"Date: {verified_on or 'N/A'}"
+        pdf.cell(270, 10, f"{user_text} | {time_text}", ln=True, align="C")
+        pdf.ln(5)
 
     headers = ["Job Number", "Lot Number", "Item Code", "Description", "Scan ID", "Qty"]
     col_widths = [35, 30, 30, 100, 50, 20]
@@ -200,6 +207,11 @@ def run():
     ::-webkit-scrollbar-thumb:hover {
         background: #555;
     }
+    /* Force white text for labels and input */
+    label, .stTextInput > div > div > input {
+        color: white !important;
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -497,9 +509,27 @@ def run():
                         )
     
                 st.success("Scans verified and inventory updated.")
-    
+               
+                item_map = {}
+                with get_db_cursor() as cur:
+                    cur.execute("SELECT item_code, item_description FROM items_master")
+                    item_map = dict(cur.fetchall())
+
+                generate_finalize_summary_pdf([{
+                    "job_number": job,
+                    "lot_number": lot,
+                    "item_code": item_code,
+                    "item_description": item_map.get(item_code, ""),
+                    "scan_id": sid,
+                    "qty": 1
+                } for job, lot, item_code, sid in st.session_state.scan_buffer],
+                verified_by=sb,
+                verified_on=datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
+                )
+
                 summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
                 if os.path.exists(summary_path):
+                    st.success("✅ Scan summary ready! You can download the PDF below.")
                     with open(summary_path, "rb") as f:
                         st.download_button(
                             label="📄 Download Final Scan Summary",
