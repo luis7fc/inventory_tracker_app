@@ -259,7 +259,7 @@ def run():
                         new_code,
                         adjusted_qty,
                         location,
-                        transaction_type="Job Issue" if tx_type == "Issue" else "Return"
+                        transaction_type="Job Issue" if tx_type == "Issue" else "Return",
                         note="Updated"
                     )
                     inserted = True
