@@ -2,7 +2,7 @@
 import io
 import re
 from datetime import date
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import uuid
 import pandas as pd
 import streamlit as st
@@ -30,37 +30,47 @@ def get_distinct_statuses() -> List[str]:
     with get_db_cursor() as cur:
         cur.execute("SELECT DISTINCT status FROM pulltags ORDER BY status;")
         return [r[0] for r in cur.fetchall()]
-
-
+        
 def query_pulltags(
-    job_lot_pairs: List[Tuple[str, str]],
-    tx_types: List[str],
-    statuses: List[str],
+    job_lot_pairs: Optional[List[Tuple[str, str]]] = None,
+    tx_types: Optional[List[str]] = None,
+    statuses: Optional[List[str]] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    warehouses: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    if not job_lot_pairs:
-        return pd.DataFrame()
-
-    if not statuses:                  # fall back to "show all"
-        statuses = get_distinct_statuses()
+    if not any([job_lot_pairs, tx_types, statuses, warehouses, start_date, end_date]):
+        raise ValueError("At least one filter must be applied to query pulltags.")
 
     with get_db_cursor() as cur:
         sql = """
             SELECT id, job_number, lot_number, item_code, quantity,
                    uom, description, cost_code,
                    warehouse AS location,
-                   transaction_type, status
-            FROM   pulltags
-            WHERE  (job_number, lot_number) IN %s
-              AND  transaction_type = ANY(%s)
-              AND  status           = ANY(%s)
-            ORDER  BY job_number, lot_number, item_code
+                   transaction_type, status, last_updated
+            FROM pulltags
+            WHERE (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN %(job_lot_pairs)s)
+              AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
+              AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
+              AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
+              AND (%(start_date)s IS NULL OR last_updated::date >= %(start_date)s)
+              AND (%(end_date)s IS NULL OR last_updated::date <= %(end_date)s)
+            ORDER BY job_number, lot_number, item_code
         """
-        cur.execute(sql, (tuple(job_lot_pairs), tx_types, statuses))
+
+        cur.execute(sql, {
+            "job_lot_pairs": tuple(job_lot_pairs) if job_lot_pairs else None,
+            "tx_types": tx_types if tx_types else None,
+            "statuses": statuses if statuses else None,
+            "warehouses": warehouses if warehouses else None,
+            "start_date": start_date,
+            "end_date": end_date,
+        })
+
         rows = cur.fetchall()
-        cols = [d.name for d in cur.description]
+        cols = [desc.name for desc in cur.description]
     return pd.DataFrame(rows, columns=cols)
-
-
+    
 def save_changes_to_db(df: pd.DataFrame) -> None:
     with get_db_cursor() as cur:
         for r in df.itertuples():
@@ -79,7 +89,6 @@ def save_changes_to_db(df: pd.DataFrame) -> None:
                     r.id,
                 ),
             )
-
 
 def mark_exported(ids: List[str]) -> None:
     """
@@ -163,6 +172,10 @@ def run() -> None:
     # ── 2) Filters ───────────────────────────────────────────────────────
     default_tx = ["Job Issue", "ADD", "RETURNB", "Return"]
     tx_types = st.multiselect("Transaction Types", default_tx, default=default_tx)
+    warehouse_filter = st.text_input("Warehouse filter (comma-separated)")
+    start_date = st.date_input("Start Date", value=None)
+    end_date = st.date_input("End Date", value=None)
+
 
     all_statuses = get_distinct_statuses()
     statuses = st.multiselect("Status filter", all_statuses, default=all_statuses)
@@ -171,14 +184,25 @@ def run() -> None:
 
     # ── 3) Load pull-tags button ────────────────────────────────────────
     if st.button("🔍 Load pull-tags"):
-        df = query_pulltags(ss.job_lot_queue, tx_types, statuses)
-        if df.empty:
-            st.warning("No rows match those filters.")
-        else:
-            ss.pulltag_df = df
-            ss.edited_df = df.copy()
-            ss.show_grid = True
-            st.rerun()
+        try:
+            warehouses = [w.strip() for w in warehouse_filter.split(",") if w.strip()] or None
+            df = query_pulltags(
+                job_lot_pairs=ss.job_lot_queue or None,
+                tx_types=tx_types or None,
+                statuses=statuses or None,
+                start_date=start_date if start_date else None,
+                end_date=end_date if end_date else None,
+                warehouses=warehouses
+            )
+            if df.empty:
+                st.warning("No rows match those filters.")
+            else:
+                ss.pulltag_df = df
+                ss.edited_df = df.copy()
+                ss.show_grid = True
+                st.rerun()
+        except ValueError as e:
+            st.error(str(e))
 
     # ── 4) Editable grid ────────────────────────────────────────────────
     if ss.get("show_grid"):
