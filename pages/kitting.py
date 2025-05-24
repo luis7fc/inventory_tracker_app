@@ -395,28 +395,20 @@ def run():
                 scans_needed[item_code][(job, lot)] += abs(qty)
 
     MAX_SCAN_DISPLAY = 20
-    next_item = None
-    for item_code, job_lots in scans_needed.items():
-        total_needed = sum(job_lots.values())
-        total_scanned = len([sid for (_, _, code, _) in st.session_state.scan_buffer if code == item_code])
-        if total_scanned < total_needed:
-            next_item = item_code
-            break
-
     st.markdown("---")
     st.subheader("🔍 Live Scan Buffer")
 
     # Init scan buffer if not present
     if "scan_buffer" not in st.session_state:
         st.session_state.scan_buffer = []
-
-    # Auto-clean malformed entries (ensure all are 4-tuples)
+    
+    # Ensure buffer only contains valid 4-tuples
     st.session_state.scan_buffer = [
         entry for entry in st.session_state.scan_buffer
         if isinstance(entry, tuple) and len(entry) == 4
     ]
-
-    # Guided scan logic with safe unpack
+    
+    # Safely count matching scans
     next_item = None
     for item_code, job_lots in scans_needed.items():
         total_needed = sum(job_lots.values())
@@ -429,7 +421,6 @@ def run():
             next_item = item_code
             remaining = total_needed - total_scanned
             break
-    
         
     # UI toggle
     edit_mode = st.toggle("✏️ Edit Scan Entries", value=False)
