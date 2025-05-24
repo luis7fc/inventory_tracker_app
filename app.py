@@ -22,10 +22,6 @@ import pages.kitting                as kitting
 # ──────────────────────────────────────────────────────────────────────────────
 #  Global background helper
 # ──────────────────────────────────────────────────────────────────────────────
-import base64, pathlib
-
-import base64, pathlib
-import streamlit as st
 
 def add_background(png_file: str) -> None:
     """Unified background + scroll + contrast-safe theming."""
@@ -85,8 +81,14 @@ def add_background(png_file: str) -> None:
     }}
 
     /* Global readable text */
-    body, div, span, input, select, textarea, label {{
+    input, select, textarea, label {{
         color: #111 !important;
+
+    }}
+    /* Hide sidebar section title (the duplicated page label) */
+    section[data-testid="stSidebar"] h1 {{
+        display: none !important;
+
     }}
     h1, h2, h3, p,
     [data-testid="stMetricValue"],
@@ -94,6 +96,12 @@ def add_background(png_file: str) -> None:
         color: #FFFFFF !important;
         text-shadow: 0 0 4px rgba(0,0,0,0.6);
     }}
+
+    /* Fix dark-on-dark metric values */
+    [data-testid="stMetric"] * {{
+        color: #fff !important;
+    }}
+
 
     /* Input contrast fix */
     .stTextInput input,
