@@ -216,15 +216,6 @@ def finalize_add(
 # Streamlit UI
 # ──────────────────────────────────────────────────────────────────────────────
 def run():
-    st.markdown(
-        """
-        <style>
-        [data-testid="stSidebarNav"] { display: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.title("🛠️ Post-Kitting Adjustments")
 
     transaction_type = st.selectbox("Transaction Type", ["ADD", "RETURNB"])
