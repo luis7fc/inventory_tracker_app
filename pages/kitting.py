@@ -177,30 +177,32 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 # -----------------------------------------------------------------------------
 
 def run():
-    st.markdown(
-        """
-        <style>
-        html, body, [data-testid="stAppViewContainer"] {
-            overflow-y: scroll !important;
-        }
-        ::-webkit-scrollbar {
-            width: 12px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f0f0f0;
-        }
-        ::-webkit-scrollbar-thumb {
-            background-color: #888;
-            border-radius: 6px;
-            border: 3px solid #f0f0f0;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("""
+    <style>
+    /* Ensure the main app area scrolls */
+    section.main {
+        overflow-y: auto !important;
+        height: 100vh !important;
+    }
+    
+    /* Optional: make the scrollbar more visible */
+    ::-webkit-scrollbar {
+        width: 12px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #f0f0f0;
+    }
+    ::-webkit-scrollbar-thumb {
+        background-color: #888;
+        border-radius: 6px;
+        border: 3px solid #f0f0f0;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 
 
     st.title("📦 Job Kitting")
