@@ -2,6 +2,8 @@ import time
 import streamlit as st
 st.set_page_config(page_title="CRS Inventory Tracker", layout="wide")
 from auth import login
+import base64
+import pathlib
 
 # Import existing pages
 import pages.receiving              as receiving
