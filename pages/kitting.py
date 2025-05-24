@@ -403,24 +403,34 @@ def run():
             next_item = item_code
             break
 
-
     st.markdown("---")
     st.subheader("🔍 Live Scan Buffer")
 
     # Init scan buffer if not present
     if "scan_buffer" not in st.session_state:
         st.session_state.scan_buffer = []
-    
-    # Track current scan target
+
+    # Auto-clean malformed entries (ensure all are 4-tuples)
+    st.session_state.scan_buffer = [
+        entry for entry in st.session_state.scan_buffer
+        if isinstance(entry, tuple) and len(entry) == 4
+    ]
+
+    # Guided scan logic with safe unpack
     next_item = None
     for item_code, job_lots in scans_needed.items():
         total_needed = sum(job_lots.values())
-        total_scanned = sum(1 for (_, _, code, _) in st.session_state.scan_buffer if code == item_code)
+        total_scanned = len([
+            sid for entry in st.session_state.scan_buffer
+            for job, lot, code, sid in [entry]
+            if code == item_code
+        ])
         if total_scanned < total_needed:
             next_item = item_code
             remaining = total_needed - total_scanned
             break
     
+        
     # UI toggle
     edit_mode = st.toggle("✏️ Edit Scan Entries", value=False)
     
