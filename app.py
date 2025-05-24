@@ -28,7 +28,7 @@ import base64, pathlib
 import streamlit as st
 
 def add_background(png_file: str) -> None:
-    """Unified background + scroll + theme injection."""
+    """Unified background + scroll + contrast-safe theming."""
     if not st.session_state.get("show_bg", True):
         return
 
@@ -38,7 +38,7 @@ def add_background(png_file: str) -> None:
 
     st.markdown(f"""
     <style>
-    /* Full-page scroll unlocking */
+    /* Root scroll fix */
     html, body {{
         height: 100%;
         margin: 0;
@@ -46,49 +46,48 @@ def add_background(png_file: str) -> None:
         overflow-x: hidden !important;
     }}
 
-    section.main, div[data-testid="stApp"], .block-container {{
+    /* Main scrollable layout */
+    section.main {{
+        min-height: 100vh !important;
         height: auto !important;
-        overflow-y: auto !important;
+        overflow-y: scroll !important;
+        position: relative;
+        z-index: 1;
         padding-bottom: 20px;
-        box-sizing: border-box;
+    }}
+    .block-container {{
+        min-height: 100%;
         background: transparent !important;
+        box-sizing: border-box;
     }}
 
-    /* Sidebar styling */
+    /* Sidebar controls */
     button[aria-label="Collapse sidebar"],
     button[aria-label="Expand sidebar"],
     button[data-testid="collapsedControl"] {{
         position: fixed !important;
         top: 0.75rem; left: 0.75rem;
         width: 40px !important; height: 40px !important;
-        padding: 0 !important;
         background: rgba(10,14,30,0.85) !important;
         border: 2px solid #00D67A !important;
         border-radius: 50% !important;
-        box-shadow: 0 0 6px rgba(0,0,0,0.6);
         z-index: 1003 !important;
     }}
-    button[aria-label="Collapse sidebar"] svg,
-    button[aria-label="Expand sidebar"]  svg,
-    button[data-testid="collapsedControl"] svg {{
-        width: 24px !important; height: 24px !important;
-        stroke: #00D67A !important; stroke-width: 3;
+    button svg {{
+        stroke: #00D67A !important;
+        stroke-width: 3;
     }}
 
-    div[data-testid="stSidebarNav"],
-    section[data-testid="stSidebarNav"] {{
-        display: none !important;
-    }}
     section[data-testid="stSidebar"],
     div[data-testid="stSidebar"] > div:first-child {{
         background: rgba(10,14,30,0.85) !important;
         backdrop-filter: blur(2px);
     }}
 
-    /* Toolbars and metric styles */
-    [data-testid="stToolbar"],
-    [data-testid="stHeader"] {{ background: transparent !important; box-shadow:none !important; }}
-
+    /* Global readable text */
+    body, div, span, input, select, textarea, label {{
+        color: #111 !important;
+    }}
     h1, h2, h3, p,
     [data-testid="stMetricValue"],
     [data-testid="stMetricLabel"] {{
@@ -96,13 +95,22 @@ def add_background(png_file: str) -> None:
         text-shadow: 0 0 4px rgba(0,0,0,0.6);
     }}
 
-    /* Button theme */
+    /* Input contrast fix */
+    .stTextInput input,
+    .stNumberInput input,
+    .stSelectbox select,
+    textarea {{
+        background-color: #f7f7f7 !important;
+        color: #111 !important;
+        border-radius: 4px;
+    }}
+
+    /* Button styling */
     div.stButton > button,
     div.stDownloadButton > button,
     div.stForm > form button {{
         background-color: #00B868 !important;
         color: #FFFFFF !important;
-        border: none !important;
         border-radius: 6px !important;
         padding: 0.5rem 1.2rem !important;
     }}
@@ -111,22 +119,8 @@ def add_background(png_file: str) -> None:
     div.stForm > form button:hover {{
         background-color: #00D67A !important;
     }}
-    div.stButton > button:active,
-    div.stDownloadButton > button:active,
-    div.stForm > form button:active {{
-        transform: translateY(1px);
-    }}
 
-    /* Input visibility and spacing */
-    label, .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stSelectbox > div > div > select {{
-        color: #333 !important;
-        background-color: #fff !important;
-        border-radius: 4px;
-    }}
-
-    /* Scrollbar appearance */
+    /* Scrollbar visibility */
     ::-webkit-scrollbar {{
         width: 14px;
         height: 14px;
@@ -144,7 +138,7 @@ def add_background(png_file: str) -> None:
         background: #444;
     }}
 
-    /* Hero background */
+    /* Background image layer */
     .bg-div {{
         position: fixed; inset: 0;
         background: url("data:image/png;base64,{b64}") no-repeat center top fixed !important;
