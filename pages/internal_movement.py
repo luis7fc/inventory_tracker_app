@@ -6,7 +6,7 @@ import random
 from collections import Counter, defaultdict
 from db import get_db_cursor
 from config import WAREHOUSES
-from pages.receiving import SKIP_SCAN_CHECK_LOCATIONS, IRISH_TOASTS
+from pages.receiving import IRISH_TOASTS
 
 def run():
     st.header("🔀 Internal Movement")
