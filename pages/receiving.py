@@ -16,10 +16,6 @@ IRISH_TOASTS = [
     "🪙 May your inventory always balance – success!"
 ]
 
-# locations where pallet scans should skip uniqueness checks
-SKIP_SCAN_CHECK_LOCATIONS = ("VKIT", "SKIT", "FKIT", "IKIT", "GKIT")
-
-
 def run():
     st.header("📑 Receiving")
 
@@ -114,23 +110,22 @@ def run():
             if len(scans) != expected or any(not s.strip() for s in scans):
                 error_msgs.append(f"Line {idx+1}: scans count mismatch or blank entries.")
 
-            # Scan uniqueness against current_scan_location (skip for KIT locations)
+            # Scan uniqueness against current_scan_location (skip for KIT locations): Enhanced scan reuse check
             for scan_id in scans:
                 clean_id = scan_id.strip()
                 with get_db_cursor() as cur:
                     cur.execute(
-                        "SELECT location FROM current_scan_location WHERE scan_id=%s",
+                        "SELECT item_code, location FROM current_scan_location WHERE scan_id = %s",
                         (clean_id,)
                     )
-                    existing_loc = cur.fetchone()
-                if existing_loc:
-                    prev_loc = existing_loc[0]
-                    # only block if previous location is not a kitting exception
-                    if prev_loc not in SKIP_SCAN_CHECK_LOCATIONS:
-                        error_msgs.append(
-                            f"Scan '{clean_id}' was already processed in {prev_loc}."
-                        )
-
+                    existing_entry = cur.fetchone()
+                if existing_entry:
+                    prev_item, prev_loc = existing_entry
+                    error_msgs.append(
+                        f"Scan '{clean_id}' was already used for item {prev_item} in location {prev_loc}. "
+                        "Receipts must use new, unregistered scan IDs."
+                    )
+                
         # Local duplicate scan guard across all lines
         all_scans = all_scans = [s.strip() for line in lines for s in line.get("scans", [])]
         dup_counts = Counter(all_scans)
