@@ -110,11 +110,21 @@ def run():
                     scan_loc_result = cur.fetchone()
                 if scan_loc_result:
                     prev_loc, prev_item = scan_loc_result
-                    if prev_loc not in SKIP_SCAN_CHECK_LOCATIONS:
-                        if prev_loc != from_loc or prev_item != item:
-                            error_msgs.append(
-                                f"Line {idx+1}: scan '{s}' is currently at {prev_loc} (item {prev_item}). Must move from correct location/item or contact admin for override."
-                            )
+                    if prev_loc == to_loc:
+                        error_msgs.append(
+                            f"Line {idx+1}: scan '{s}' is already in destination location {to_loc}. "
+                            "Cannot re-transfer an item to the same place."
+                        )
+                    elif prev_loc != from_loc:
+                        error_msgs.append(
+                            f"Line {idx+1}: scan '{s}' is currently at {prev_loc} — expected at {from_loc}. "
+                            "Scans must be physically present at source before movement."
+                        )
+                    elif prev_item != item:
+                        error_msgs.append(
+                            f"Line {idx+1}: scan '{s}' is tagged to item {prev_item}, not {item}. "
+                            "Item mismatch must be resolved before move."
+                        )
                 else:
                     with get_db_cursor() as cur:
                         cur.execute(
