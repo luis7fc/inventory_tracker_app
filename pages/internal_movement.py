@@ -86,6 +86,15 @@ def run():
                 error_msgs.append(f"Line {idx+1}: from and to location must differ.")
 
             with get_db_cursor() as cur:
+                cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (to_loc,))
+                actual_to_warehouse = cur.fetchone()
+                if actual_to_warehouse and actual_to_warehouse[0] != warehouse:
+                    error_msgs.append(
+                        f"Line {idx+1}: destination location '{to_loc}' is in warehouse '{actual_to_warehouse[0]}', "
+                        f"but your selected warehouse is '{warehouse}'. Use the Warehouse Transfer page for inter-warehouse moves."
+                    )
+
+            with get_db_cursor() as cur:
                 cur.execute(
                     "SELECT COALESCE(SUM(quantity),0) FROM current_inventory "
                     "WHERE warehouse=%s AND location=%s AND item_code!=%s",
