@@ -112,7 +112,7 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
                 cur.execute(
                     """
                     INSERT INTO scan_verifications
-                      (scan_id, item_code, job_number, lot_number, location, scanned_by, scanned_at)
+                      (scan_id, item_code, job_number, lot_number, location, scanned_by, scan_time)
                     VALUES (%s, %s, %s, %s, %s, %s, NOW())
                     """,
                     (sid, code, job, lot, loc_val, user),
