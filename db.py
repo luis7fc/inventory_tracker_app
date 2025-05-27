@@ -207,8 +207,8 @@ def get_all_users():
 def get_pulltag_rows(job_number, lot_number):
     """Fetch pulltags for a given job and lot, including transaction type."""
     query = """
-    SELECT id, warehouse, item_code, description, quantity AS qty_req, uom,
-           cost_code, status, transaction_type
+    SELECT id, warehouse, job_number, lot_number, item_code, description,
+           quantity AS qty_req, uom, cost_code, status, transaction_type
     FROM pulltags
     WHERE job_number = %s AND lot_number = %s
     """
@@ -218,10 +218,10 @@ def get_pulltag_rows(job_number, lot_number):
         rows = cur.fetchall()
         
     return [{
-        'id': i, 'warehouse': w, 'item_code': ic, 'description': desc,
-        'qty_req': qty, 'uom': u, 'cost_code': cc, 'status': stt,
-        'transaction_type': tt
-    } for i, w, ic, desc, qty, u, cc, stt, tt in rows]
+        'id': i, 'warehouse': w, 'job_number': jn, 'lot_number': ln, 'item_code': ic,
+        'description': desc, 'qty_req': qty, 'uom': u, 'cost_code': cc,
+        'status': stt, 'transaction_type': tt
+    } for i, w, jn, ln, ic, desc, qty, u, cc, stt, tt in rows]
 
 
 def submit_kitting(kits):
