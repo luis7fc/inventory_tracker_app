@@ -1,262 +1,265 @@
 import streamlit as st
+import math
+import random
+from collections import Counter, defaultdict
 from datetime import datetime
+
 from db import get_db_cursor
 from config import WAREHOUSES
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Shared constants (no location-based exceptions now)
+# ──────────────────────────────────────────────────────────────────────────────
+IRISH_TOASTS = [
+    "☘️ Sláinte! Transaction submitted successfully!",
+    "🍀 Luck o’ the Irish – you did it!",
+    "🦃 Cheers, let’s grab a beer – transaction success!",
+    "🌈 Pot of gold secured – job well done!",
+    "🪙 May your inventory always balance – success!",
+]
+
+# No kitting exceptions – all locations are treated equally for scan‑ID validation
+SKIP_SCAN_CHECK_LOCATIONS: tuple[str, ...] = ()
+
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helper: insert a pull-tag row (adds warehouse + kitted status)
+# Helper: insert a pull‑tag row
 # ──────────────────────────────────────────────────────────────────────────────
-def insert_pulltag_line(cur, job_number, lot_number, item_code, quantity,
-                        location, transaction_type="Job Issue", note="Qty Verified by WH"):
-    """
-    Inserts a new pulltag row using items_master metadata.
-    Derives warehouse from the provided location.
-    Sets status to 'pending', accepts note for audit tracking.
-    """
-    # Lookup warehouse
-    cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (location,))
-    wh_result = cur.fetchone()
-    if not wh_result:
-        raise Exception(f"Unknown location '{location}': cannot resolve warehouse.")
-    warehouse = wh_result[0]
 
-    # Insert pulltag
+def insert_pulltag_line(
+    cur,
+    job_number,
+    lot_number,
+    item_code,
+    quantity,
+    location,
+    transaction_type="Job Issue",
+    note="Qty Verified by WH",
+):
+    """Insert a new pulltag row using items_master metadata."""
+
+    cur.execute(
+        "SELECT warehouse FROM locations WHERE location_code = %s",
+        (location,),
+    )
+    wh_row = cur.fetchone()
+    if not wh_row:
+        raise Exception(f"Unknown location '{location}' – cannot resolve warehouse.")
+    warehouse = wh_row[0]
+
     sql = """
-    INSERT INTO pulltags
-      (job_number, lot_number, item_code, quantity,
-       description, cost_code, uom, status, transaction_type, note, warehouse)
-    SELECT
-      %s, %s, item_code, %s,
-      item_description, cost_code, uom,
-      'pending', %s, %s, %s
-    FROM items_master
-    WHERE item_code = %s
-    RETURNING id
+        INSERT INTO pulltags
+              (job_number, lot_number, item_code, quantity,
+               description, cost_code, uom, status,
+               transaction_type, note, warehouse)
+        SELECT %s, %s, item_code, %s,
+               item_description, cost_code, uom,
+               'pending', %s, %s, %s
+        FROM   items_master
+        WHERE  item_code = %s
+        RETURNING id
     """
-    cur.execute(sql, (job_number, lot_number, quantity, transaction_type, note, warehouse, item_code))
+    cur.execute(
+        sql,
+        (
+            job_number,
+            lot_number,
+            quantity,
+            transaction_type,
+            note,
+            warehouse,
+            item_code,
+        ),
+    )
     return cur.fetchone()[0]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Transaction finaliser (ADD / RETURNB)
+# Finaliser for ADD / RETURNB (no location exceptions)
 # ──────────────────────────────────────────────────────────────────────────────
-def finalize_add(
-    scans_needed,
-    scan_inputs,
-    job_lot_queue,
-    *,
-    from_location,
-    to_location=None,
-    scanned_by=None,
-    progress_callback=None,
-    warehouse=None,
-):
-    if not warehouse:
-        raise ValueError("Warehouse was not provided to finalize_add.")
 
-    total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
-    done = 0
+def finalize_add(
+    scans_needed: dict,
+    scan_inputs: dict,
+    job_lot_queue: list,
+    *,
+    from_location: str | None,
+    to_location: str | None = None,
+    scanned_by: str | None = None,
+    progress_callback=None,
+    warehouse: str,
+):
+    if progress_callback is None:
+        progress_callback = lambda *_: None
+
+    # ── structure scans ────────────────────────────────────────────────────
+    scan_map: defaultdict[tuple[str, str, str], list[str]] = defaultdict(list)
+    errors: list[str] = []
+
+    for item_code, lots in scans_needed.items():
+        for (job, lot), qty in lots.items():
+            for i in range(1, qty + 1):
+                key = f"scan_{item_code}_{job}_{lot}_{i}"
+                sid = scan_inputs.get(key, "").strip()
+                if not sid:
+                    errors.append(
+                        f"Missing scan {i} for {item_code} — Job {job} / Lot {lot}."
+                    )
+                else:
+                    scan_map[(item_code, job, lot)].append(sid)
+
+    # duplicates
+    flat = [s for bundle in scan_map.values() for s in bundle]
+    dups = [s for s, c in Counter(flat).items() if c > 1]
+    if dups:
+        errors.append(f"Duplicate scan IDs entered: {', '.join(dups)}")
+
+    if errors:
+        raise Exception("\n".join(errors))
+
+    # ── DB processing ──────────────────────────────────────────────────────
+    total_scans = len(flat)
+    processed   = 0
 
     with get_db_cursor() as cur:
-        for item_code, lots in scans_needed.items():
-            total_needed = sum(lots.values())
+        for (item_code, job, lot), sid_list in scan_map.items():
+            trans_type = "Return" if to_location and not from_location else "Job Issue"
+            loc_field  = to_location if trans_type == "Return" else from_location
 
-            for (job, lot), need in lots.items():
-                assign = min(need, total_needed)
-                if assign == 0:
-                    continue
+            # single‑item location guard (multi_item_allowed == false)
+            cur.execute(
+                "SELECT multi_item_allowed FROM locations WHERE location_code = %s",
+                (loc_field,),
+            )
+            row = cur.fetchone()
+            if row and not row[0]:
+                cur.execute(
+                    "SELECT DISTINCT item_code FROM current_inventory WHERE location = %s AND quantity > 0",
+                    (loc_field,),
+                )
+                existing = [r[0] for r in cur.fetchall()]
+                if existing and any(ei != item_code for ei in existing):
+                    raise Exception(
+                        f"Location '{loc_field}' currently holds other item codes ({', '.join(existing)})."
+                    )
 
-                trans_type = "Return" if to_location and not from_location else "Job Issue"
-                loc_value  = to_location or from_location
-                sb         = scanned_by
+            for sid in sid_list:
+                # look‑up current scan location (if any)
+                cur.execute(
+                    "SELECT item_code, location FROM current_scan_location WHERE scan_id = %s",
+                    (sid,),
+                )
+                prev = cur.fetchone()
 
-                # dynamic from/to column
+                if trans_type == "Return":
+                    if prev and prev[0] != item_code:
+                        raise Exception(
+                            f"Scan '{sid}' already registered to {prev[0]} in location {prev[1]}."
+                        )
+                    # upsert → new home is to_location
+                    cur.execute(
+                        """
+                        INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
+                        VALUES (%s, %s, %s, NOW())
+                        ON CONFLICT (scan_id) DO UPDATE
+                               SET item_code = EXCLUDED.item_code,
+                                   location  = EXCLUDED.location,
+                                   updated_at= EXCLUDED.updated_at
+                        """,
+                        (sid, item_code, loc_field),
+                    )
+                else:  # Job Issue
+                    if not prev:
+                        raise Exception(f"Scan '{sid}' not found in inventory.")
+                    if prev[0] != item_code:
+                        raise Exception(
+                            f"Scan '{sid}' belongs to item {prev[0]}, not {item_code}."
+                        )
+                    if prev[1] != from_location:
+                        raise Exception(
+                            f"Scan '{sid}' currently located in '{prev[1]}', expected '{from_location}'."
+                        )
+                    cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (sid,))
+
+                # transaction row
                 loc_col = "to_location" if trans_type == "Return" else "from_location"
                 cur.execute(
                     f"""
                     INSERT INTO transactions
-                        (transaction_type, date, warehouse, {loc_col},
-                         job_number, lot_number, item_code, quantity, user_id)
+                          (transaction_type, date, warehouse, {loc_col},
+                           job_number, lot_number, item_code, quantity, user_id)
                     VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (trans_type, warehouse, loc_value, job, lot, item_code, assign, sb),
+                    (
+                        trans_type,
+                        warehouse,
+                        loc_field,
+                        job,
+                        lot,
+                        item_code,
+                        1,
+                        scanned_by or "unknown",
+                    ),
                 )
 
-                # ── pallet-level override ───────────────────────────────────
-                pallet_id  = scan_inputs.get(f"pallet_{item_code}_{job}_{lot}", "").strip()
-                pallet_qty = int(scan_inputs.get(f"pallet_qty_{item_code}_{job}_{lot}", "1"))
-
-                if pallet_id and pallet_qty > 1 and trans_type == "Job Issue":
-                    cur.execute(
-                        "SELECT location FROM current_scan_location WHERE scan_id = %s",
-                        (pallet_id,),
-                    )
-                    found = cur.fetchone()
-                    if not found:
-                        raise Exception(
-                            f"Pallet ID **{pallet_id}** not found in current_scan_location."
-                        )
-                    if found[0] != from_location:
-                        raise Exception(
-                            f"Pallet ID **{pallet_id}** is in {found[0]}, "
-                            f"not {from_location}."
-                        )
-
-                    # remove pallet from its current location
-                    cur.execute(
-                        "DELETE FROM current_scan_location WHERE scan_id = %s",
-                        (pallet_id,),
-                    )
-                    # log verification
-                    cur.execute(
-                        """
-                        INSERT INTO scan_verifications
-                               (item_code, scan_id, job_number, lot_number,
-                                scan_time, location, transaction_type,
-                                warehouse, scanned_by)
-                        VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
-                        """,
-                        (
-                            item_code,
-                            pallet_id,
-                            job,
-                            lot,
-                            from_location,
-                            trans_type,
-                            warehouse,
-                            sb,
-                        ),
-                    )
-                    done += 1
-                else:
-                    # ── individual scans ──────────────────────────────────
-                    for idx in range(1, assign + 1):
-                        sid = scan_inputs.get(
-                            f"scan_{item_code}_{job}_{lot}_{idx}", ""
-                        ).strip()
-                        if not sid:
-                            continue
-
-                        cur.execute(
-                            "SELECT location FROM current_scan_location WHERE scan_id = %s",
-                            (sid,),
-                        )
-                        existing = cur.fetchone()
-
-                        if trans_type == "Return":
-                            if existing:
-                                raise Exception(
-                                    f"Scan **{sid}** already exists in {existing[0]}."
-                                )
-                            cur.execute(
-                                """
-                                INSERT INTO current_scan_location
-                                        (scan_id, item_code, location)
-                                VALUES (%s, %s, %s)
-                                ON CONFLICT (scan_id)
-                                    DO UPDATE SET location = EXCLUDED.location
-                                """,
-                                (sid, item_code, to_location),
-                            )
-                        else:  # Job Issue
-                            if existing and existing[0] != from_location:
-                                raise Exception(
-                                    f"Scan **{sid}** is in {existing[0]} "
-                                    f"(expected {from_location})."
-                                )
-                            cur.execute(
-                                "DELETE FROM current_scan_location WHERE scan_id = %s",
-                                (sid,),
-                            )
-
-                        cur.execute(
-                            """
-                            INSERT INTO scan_verifications
-                                   (item_code, scan_id, job_number, lot_number,
-                                    scan_time, location, transaction_type,
-                                    warehouse, scanned_by)
-                            VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
-                            """,
-                            (
-                                item_code,
-                                sid,
-                                job,
-                                lot,
-                                loc_value,
-                                trans_type,
-                                warehouse,
-                                sb,
-                            ),
-                        )
-
-                        done += 1
-                        if progress_callback:
-                            progress_callback(int(done / total_scans * 100))
-
-                # update inventory
-                delta = assign if trans_type == "Return" else -assign
+                # inventory delta
+                delta = 1 if trans_type == "Return" else -1
                 cur.execute(
                     """
-                    INSERT INTO current_inventory
-                           (item_code, location, quantity, warehouse)
+                    INSERT INTO current_inventory (item_code, location, warehouse, quantity)
                     VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (item_code, location, warehouse) DO UPDATE
-                        SET quantity = current_inventory.quantity + EXCLUDED.quantity
+                    ON CONFLICT (item_code, location, warehouse)
+                        DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity
                     """,
-                    (item_code, loc_value, delta, warehouse),
+                    (item_code, loc_field, warehouse, delta),
                 )
 
-                total_needed -= assign
-                if total_needed <= 0:
-                    break
+                processed += 1
+                progress_callback(int(processed / total_scans * 100))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Streamlit UI
+# Streamlit UI – Post‑Kitting Adjustments
 # ──────────────────────────────────────────────────────────────────────────────
+
 def run():
-    st.title("🛠️ Post-Kitting Adjustments")
+    st.title("🛠️ Post‑Kitting Adjustments")
 
     transaction_type = st.selectbox("Transaction Type", ["ADD", "RETURNB"])
     warehouse        = st.selectbox("Warehouse", WAREHOUSES)
     location         = st.text_input("Location", placeholder="e.g., STAGE-A")
     note             = st.text_input("Transaction Note (optional)")
 
-    # keep adjustments list in session
     adjustments = st.session_state.setdefault("adjustments", [])
 
-    # ── add an adjustment row ───────────────────────────────────────────────
+    # ── Row entry ─────────────────────────────────────────────────────────
     with st.expander("➕ Add Adjustment Row"):
         job  = st.text_input("Job Number")
         lot  = st.text_input("Lot Number")
         code = st.text_input("Item Code")
-        qty  = st.number_input("Quantity", min_value=1, value=1, step=1)
+        qty  = st.number_input("Quantity", min_value=1, value=1)
 
         if st.button("Add to List"):
             if all([job.strip(), lot.strip(), code.strip(), qty > 0]):
-                # pull description
                 with get_db_cursor() as cur:
                     cur.execute(
                         "SELECT item_description FROM items_master WHERE item_code = %s",
                         (code.strip(),),
                     )
-                    res  = cur.fetchone()
-                    desc = res[0] if res else "(Unknown Item)"
-
+                    desc_row = cur.fetchone()
                 adjustments.append(
                     {
                         "job_number": job.strip(),
                         "lot_number": lot.strip(),
                         "item_code": code.strip(),
                         "quantity": int(qty),
-                        "description": desc,
+                        "description": desc_row[0] if desc_row else "(Unknown Item)",
                     }
                 )
             else:
                 st.warning("Please complete all fields before adding.")
 
-    # ── preview list ────────────────────────────────────────────────────────
+    # ── Preview / remove ─────────────────────────────────────────────────
     if adjustments:
         st.markdown("### 📋 Adjustments Preview")
         for i, row in enumerate(adjustments):
@@ -266,15 +269,14 @@ def run():
             cols[2].markdown(f"**Item:** {row['item_code']}")
             cols[3].markdown(f"**Qty:** {row['quantity']}")
             cols[4].markdown(f"**Desc:** {row['description']}")
-            if cols[5].button("❌", key=f"remove_{i}"):
+            if cols[5].button("❌", key=f"rm_{i}"):
                 adjustments.pop(i)
                 st.rerun()
 
-    # ── submit adjustments ─────────────────────────────────────────────────
+    # ── Stage 1 submit ───────────────────────────────────────────────────
     if adjustments and st.button("Submit Adjustments"):
-        scans_needed   = {}
-        job_lot_queue  = []
-        confirmed_rows = []
+        scans_needed  = {}
+        job_lot_queue = []
 
         for row in adjustments:
             job, lot, code, qty = (
@@ -284,56 +286,47 @@ def run():
                 row["quantity"],
             )
 
-            # ── DB look-ups & pull-tag insert ────────────────────────────
-            with get_db_cursor() as cur:          # ←--- INDENT **8 spaces** (same as the comment)
+            with get_db_cursor() as cur:
                 cur.execute(
                     "SELECT scan_required FROM items_master WHERE item_code = %s",
                     (code,),
                 )
-                res = cur.fetchone()
-                scan_tracked = bool(res and res[0])
-                
+                scan_tracked = bool(cur.fetchone() and cur.fetchone())
+
                 qty_store = -abs(qty) if transaction_type == "RETURNB" else qty
                 insert_pulltag_line(
-                    cur, job, lot, code, qty_store, location, transaction_type, note=note
+                    cur,
+                    job,
+                    lot,
+                    code,
+                    qty_store,
+                    location,
+                    transaction_type,
+                    note,
                 )
 
-            # ── build scan checklist only if tracking required ───────────
             if scan_tracked:
                 scans_needed.setdefault(code, {}).setdefault((job, lot), 0)
                 scans_needed[code][(job, lot)] += qty
 
             job_lot_queue.append((job, lot))
-            confirmed_rows.append(
-                {
-                    "Job":  job,
-                    "Lot":  lot,
-                    "Item": code,
-                    "Qty":  qty,
-                    "Type": transaction_type,
-                }
-            )
 
-        # ── nothing to scan? skip straight to “done” ──────────────────────
         if not scans_needed:
-            st.success("✅ Adjustments posted—no scans required.")
+            st.success(random.choice(IRISH_TOASTS))
+            st.balloons()
             st.session_state.adjustments.clear()
             return
 
-        # persist for second stage
         st.session_state.update(
             {
                 "scans_needed": scans_needed,
                 "job_lot_queue": job_lot_queue,
-                "confirmed_rows": confirmed_rows,
                 "finalize_ready": True,
             }
         )
         st.rerun()
 
-    # ───────────────────────────────────────────────────────────────────
-    # 2-step: SCAN ENTRY + FINALISE
-    # ───────────────────────────────────────────────────────────────────
+    # ── Stage 2: scan & finalise ─────────────────────────────────────────
     if st.session_state.get("finalize_ready"):
         scans_needed   = st.session_state["scans_needed"]
         job_lot_queue  = st.session_state["job_lot_queue"]
@@ -343,26 +336,13 @@ def run():
             scan_inputs = {}
             for item_code, lots in scans_needed.items():
                 for (job, lot), qty in lots.items():
-                    st.write(
-                        f"**{item_code} — Job {job} / Lot {lot} — Total Scans: {qty}**"
-                    )
-                    key_prefix = f"{item_code}_{job}_{lot}"
-                    scan_inputs[f"pallet_{key_prefix}"]     = st.text_input(
-                        "Optional Pallet ID", key=f"pallet_{key_prefix}"
-                    )
-                    scan_inputs[f"pallet_qty_{key_prefix}"] = st.number_input(
-                        "Pallet Quantity",
-                        min_value=1,
-                        value=1,
-                        step=1,
-                        key=f"pallet_qty_{key_prefix}",
-                    )
-                    for i in range(1, qty + 1):
-                        scan_inputs[f"scan_{key_prefix}_{i}"] = st.text_input(
-                            f"Scan {i} for {item_code}",
-                            key=f"scan_{key_prefix}_{i}",
+                    st.write(f"**{item_code} — Job {job} / Lot {lot} — Total Scans: {qty}**")
+                    prefix = f"{item_code}_{job}_{lot}"
+                    for n in range(1, qty + 1):
+                        scan_inputs[f"scan_{prefix}_{n}"] = st.text_input(
+                            f"Scan {n} for {item_code}",
+                            key=f"scan_{prefix}_{n}",
                         )
-
             submitted = st.form_submit_button("Finalize Adjustments")
 
         if submitted:
@@ -370,14 +350,8 @@ def run():
                 st.error("Please enter a **Location** before finalising.")
                 st.stop()
 
-            sb = st.session_state.get("username", "unknown")
-            progress_bar = st.progress(0)
-
+            bar = st.progress(0)
             with st.spinner("Processing adjustments…"):
-
-                def update_progress(pct: int):
-                    progress_bar.progress(pct)
-
                 try:
                     finalize_add(
                         scans_needed,
@@ -385,16 +359,16 @@ def run():
                         job_lot_queue,
                         from_location=location if transaction_type == "ADD" else None,
                         to_location=location if transaction_type == "RETURNB" else None,
-                        scanned_by=sb,
-                        progress_callback=update_progress,
+                        scanned_by=st.session_state.get("username", "unknown"),
+                        progress_callback=lambda pct: bar.progress(pct),
                         warehouse=warehouse,
                     )
                 except Exception as err:
                     st.error(f"⚠️ {err}")
-                    st.stop()  # leave widgets intact for correction
+                    st.stop()
 
-            st.success("✅ Adjustments finalized and inventory updated.")
-            # reset session
-            for k in ("adjustments", "scans_needed", "job_lot_queue", "confirmed_rows"):
-                st.session_state.pop(k, None)
+            st.success(random.choice(IRISH_TOASTS))
+            st.balloons()
+            for key in ("adjustments", "scans_needed", "job_lot_queue"):
+                st.session_state.pop(key, None)
             st.session_state.finalize_ready = False
