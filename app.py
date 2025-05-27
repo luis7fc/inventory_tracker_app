@@ -15,6 +15,7 @@ import pages.sage_r                 as sage_r
 import pages.internal_movement      as internal_movement
 import pages.landing                as landing
 import pages.adjustments            as adjustments
+import pages.pallet_tools           as pallet_tools
 
 # Import new pages
 import pages.pulltag_upload         as pulltag_upload
@@ -181,13 +182,14 @@ add_background("assets/logo.png")
 # --- Define Tabs ---
 base_pages = [
     "Home",
-    "Receiving",
-    "Reports",
-    "Sage Export",
+    "Inventory",
     "Kitting",
-    "Internal Movement",
     "Adjustments",
+    "Pallet Tools",
+    "Receiving",
+    "Internal Movement",
     "Pull-tag Upload",
+    "Sage Export",
 ]
 
 # Admin-only pages
@@ -212,10 +214,10 @@ choice = st.sidebar.radio("", pages)
 
 # Route to the selected page
 if choice == "Home":
-    landing.run()
+    landing.run() 
 elif choice == "Receiving":
     receiving.run()
-elif choice == "Reports":
+elif choice == "Inventory":
     reports.run()
 elif choice == "Users":
     users.run()
@@ -233,3 +235,6 @@ elif choice == "Internal Movement":
     internal_movement.run()
 elif choice == "Adjustments":
     adjustments.run()
+elif choice == "Pallet Tools":
+    pallet_tools.run()
+
