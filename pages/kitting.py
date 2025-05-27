@@ -14,8 +14,38 @@ from db import (
 )
 import os
 
-#Helper Functions:
-#1) Generate PDF Function
+#Helper Functions
+
+def validate_scan_location(cur, scan_id, trans_type, expected_location=None):
+    """
+    Validates scan location rules for Job Issue or Return.
+    
+    Args:
+        cur: psycopg2 cursor
+        scan_id: the scan ID being verified
+        trans_type: "Job Issue" or "Return"
+        expected_location: required for "Job Issue", ignored for "Return"
+    
+    Raises:
+        Exception if validation fails
+    """
+    cur.execute("SELECT location FROM current_scan_location WHERE scan_id = %s", (scan_id,))
+    row = cur.fetchone()
+
+    if trans_type == "Job Issue":
+        if not row:
+            raise Exception(f"Scan {scan_id} is not registered to any location.")
+        current_loc = row[0]
+        if current_loc != expected_location:
+            raise Exception(f"Scan {scan_id} is at {current_loc}, not {expected_location}. Move it or correct input.")
+
+    elif trans_type == "Return":
+        if row:
+            raise Exception(f"Scan {scan_id} is already assigned to location {row[0]}. Cannot return again.")
+
+    else:
+        raise ValueError(f"Unsupported transaction type: {trans_type}")
+
 
 def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=None):
 
@@ -125,7 +155,14 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     scan_index += 1
                     if not sid:
                         raise Exception(f"Missing scan ID for {item_code} #{idx} in {job}-{lot}")
-        
+                    # Validate that scan_id is in the expected location (or unassigned for Return)
+                    validate_scan_location(
+                        cur,
+                        scan_id=sid,
+                        trans_type=trans_type,
+                        expected_location=from_location if trans_type == "Job Issue" else None
+                    )
+
                     cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'", (sid,))
                     issues = cur.fetchone()[0]
                     cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'", (sid,))
