@@ -491,29 +491,26 @@ def run():
                     for j, l, code, sid in st.session_state.scan_buffer
                 }
                 
-                # Build full pulltag summary with scan IDs if available
+                # Build a list of rows: one per scan_id
                 summary_rows = []
-                for job, lot in st.session_state.job_lot_queue:
+                for (job, lot, item_code, scan_id) in st.session_state.scan_buffer:
                     for r in get_pulltag_rows(job, lot):
-                        if r["transaction_type"] not in ("Job Issue", "Return"):
-                            continue
-                        sid = scan_map.get((r["job_number"], r["lot_number"], r["item_code"]), None)
-                        summary_rows.append({
-                            "job_number": r["job_number"],
-                            "lot_number": r["lot_number"],
-                            "item_code": r["item_code"],
-                            "item_description": r["description"],
-                            "scan_id": sid,
-                            "qty": abs(r["qty_req"])
-                        })
-                
+                        if r["item_code"] == item_code and r["transaction_type"] in ("Job Issue", "Return"):
+                            summary_rows.append({
+                                "job_number": r["job_number"],
+                                "lot_number": r["lot_number"],
+                                "item_code": r["item_code"],
+                                "item_description": r["description"],
+                                "scan_id": scan_id,
+                                "qty": 1
+                            })
+
                 # Generate PDF using full pulltag data
                 generate_finalize_summary_pdf(
                     summary_rows,
                     verified_by=sb,
                     verified_on=datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
                 )
-
 
                 summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
                 if os.path.exists(summary_path):
