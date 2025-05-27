@@ -22,6 +22,9 @@ IRISH_TOASTS = [
 
 def insert_pulltag_line(cur, job, lot, code, qty, loc, tx_type, note):
     """Insert a pull-tag row and resolve warehouse via location."""
+    # For RETURNB transactions, record negative quantity
+    insert_qty = -qty if tx_type == "RETURNB" else qty
+
     cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (loc,))
     row = cur.fetchone()
     if not row:
@@ -41,7 +44,7 @@ def insert_pulltag_line(cur, job, lot, code, qty, loc, tx_type, note):
         WHERE item_code = %s
         RETURNING id
         """,
-        (job, lot, qty, tx_type, note, warehouse, code),
+        (job, lot, insert_qty, tx_type, note, warehouse, code),
     )
     return cur.fetchone()[0]
 
@@ -84,7 +87,7 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, no
             wh_row = cur.fetchone()
             warehouse = wh_row[0] if wh_row else None
 
-            # check single-item location rule
+            # enforce single-item location rule
             cur.execute(
                 "SELECT multi_item_allowed FROM locations WHERE location_code = %s", (loc_val,)
             )
@@ -98,7 +101,7 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, no
                     raise Exception(f"Location '{loc_val}' holds other items: {', '.join(present)}.")
 
             for sid in sid_list:
-                # record scan verification with input transaction type
+                # insert into scan_verifications with raw transaction type
                 cur.execute(
                     """
                     INSERT INTO scan_verifications
@@ -173,10 +176,10 @@ def run():
     st.title("🛠️ Post-Kitting Adjustments")
 
     # Ensure user is known
-    if "username" not in st.session_state:
+    if "user" not in st.session_state or not st.session_state.user:
         st.error("Please log in to use this page.")
         st.stop()
-    user = st.session_state["username"]
+    user = st.session_state.user
 
     tx_input = st.selectbox("Transaction Type", ["ADD", "RETURNB"])
     warehouse_sel = st.selectbox("Warehouse", WAREHOUSES)
@@ -241,10 +244,8 @@ def run():
             st.stop()
 
         # Build scan requirements map
-        scans_needed = {
-            row["code"]: {(row["job"], row["lot"]): row["qty"]}
-            for row in adjustments if row["scan_required"]
-        }
+        scans_needed = {row["code"]: {(row["job"], row["lot"]): row["qty"]}
+                       for row in adjustments if row["scan_required"]}
         scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
 
         try:
@@ -258,7 +259,7 @@ def run():
                     note=note,
                     input_tx=tx_input,
                 )
-            # Always create pull-tag rows
+            # Always create pull-tag rows with proper sign
             for row in adjustments:
                 with get_db_cursor() as cur:
                     insert_pulltag_line(
