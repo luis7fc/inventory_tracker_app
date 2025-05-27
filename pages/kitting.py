@@ -348,7 +348,7 @@ def run():
                         delete_pulltag_line(cur, r['id'])
 
                     elif adjusted_qty != r['qty_req']:
-                        update_pulltag_line(cur, r['id'], adjusted_qty, note="Updated")
+                        update_pulltag_line(cur, r['id'], adjusted_qty)
                         
                 st.success(f"Kitting updated for {job}-{lot}.")
                             
