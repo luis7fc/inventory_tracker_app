@@ -331,8 +331,7 @@ def run():
                     if len(parts) >= 5:
                         _, j, l, code, pid = parts
                         if j == job and l == lot:
-                            kits[(j, l, code, int(pid))] = qty
-
+                            kits[(j, l, code, pid)] = qty  # treat pulltag ID as string, not int
 
             with get_db_cursor() as cur:
                 existing = [r['item_code'] for r in rows]
