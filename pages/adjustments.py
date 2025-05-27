@@ -63,7 +63,8 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
     for code, lots in scans_needed.items():
         for (job, lot), qty in lots.items():
             for i in range(1, qty + 1):
-                sid = scan_inputs.get(f"scan_{code}_{job}_{lot}_{i}", "").strip()
+                key = f"scan_{code}_{job}_{lot}_{i}"
+                sid = scan_inputs.get(key, "").strip()
                 if not sid:
                     errors.append(f"Missing scan {i} for {code} — Job {job} / Lot {lot}.")
                 else:
@@ -89,14 +90,20 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
             flag = cur.fetchone()
             multi_ok = bool(flag and flag[0])
             if not multi_ok:
-                cur.execute("SELECT DISTINCT item_code FROM current_inventory WHERE location=%s AND quantity>0", (loc_val,))
+                cur.execute(
+                    "SELECT DISTINCT item_code FROM current_inventory WHERE location=%s AND quantity>0", 
+                    (loc_val,),
+                )
                 present = [r[0] for r in cur.fetchall()]
                 if present and any(p != code for p in present):
                     raise Exception(f"Location '{loc_val}' currently holds other items ({', '.join(present)}).")
 
             for sid in sid_list:
                 # scan location lookup
-                cur.execute("SELECT item_code, location FROM current_scan_location WHERE scan_id=%s", (sid,))
+                cur.execute(
+                    "SELECT item_code, location FROM current_scan_location WHERE scan_id=%s", 
+                    (sid,),
+                )
                 prev = cur.fetchone()
 
                 if tx_type == "Return":
@@ -140,6 +147,7 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
                 completed += 1
                 progress_cb(int(completed / total * 100))
 
+
 # ─────────────────────────────────────────────
 # STREAMLIT PAGE
 # ─────────────────────────────────────────────
@@ -179,7 +187,7 @@ def run():
                     "desc": description,
                     "scan_required": scan_req,
                 })
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.warning("Fill all fields before adding.")
 
@@ -195,12 +203,66 @@ def run():
             cols[4].write("🔒" if row["scan_required"] else "—")
             if cols[5].button("❌", key=f"del{idx}"):
                 adjustments.pop(idx)
-                st.experimental_rerun()
+                st.rerun()
 
-    # ── Stage 1: pulltags + scan check ───────
+    # ── Scan inputs ──────────────────────────
+    if adjustments and any(r["scan_required"] for r in adjustments):
+        st.markdown("### 🔍 Enter Scan IDs")
+        for row in adjustments:
+            if row["scan_required"]:
+                for i in range(1, row["qty"] + 1):
+                    st.text_input(
+                        f"Scan ID for {row['code']} — Job {row['job']} / Lot {row['lot']} #{i}",
+                        key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}",
+                    )
+
+    # ── Submit adjustments ──────────────────
     if adjustments and st.button("Submit Adjustments"):
         if not location.strip():
             st.error("Location required first.")
             st.stop()
 
+        # Build scans_needed map
         scans_needed: dict = {}
+        for row in adjustments:
+            if row["scan_required"]:
+                scans_needed.setdefault(row["code"], {})[(row["job"], row["lot"]) ] = row["qty"]
+
+        # Gather scan inputs
+        scan_inputs = {
+            k: v for k, v in st.session_state.items() if k.startswith("scan_")
+        }
+
+        try:
+            # Process scanned items
+            if scans_needed:
+                finalize_scan_items(
+                    scans_needed,
+                    scan_inputs,
+                    from_loc=location if tx_type == "ADD" else "",
+                    to_loc=location if tx_type == "RETURNB" else "",
+                    user=st.session_state.get("user_id", 0),
+                    warehouse=warehouse,
+                )
+
+            # Process non-scan adjustments
+            for row in adjustments:
+                if not row["scan_required"]:
+                    with get_db_cursor() as cur:
+                        insert_pulltag_line(
+                            cur,
+                            row["job"],
+                            row["lot"],
+                            row["code"],
+                            row["qty"],
+                            location,
+                            tx_type,
+                            note,
+                        )
+
+            # Success feedback
+            st.success(random.choice(IRISH_TOASTS))
+            st.session_state["adj_rows"] = []
+
+        except Exception as e:
+            st.error(str(e))
