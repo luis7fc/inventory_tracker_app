@@ -5,10 +5,9 @@ from openai import OpenAI
 from db import get_db_cursor
 from datetime import datetime
 
-# Create OpenAI client
 client = OpenAI(api_key=st.secrets["openai"]["api_key"])
 
-# System prompt: schema reference and safety constraints
+# System prompt: schema reference + safety policy
 SCHEMA_CONTEXT = """
 You are an AI analyst that generates SQL queries for a PostgreSQL database. 
 Available tables include:
@@ -25,6 +24,9 @@ Available tables include:
 You are only allowed to generate safe SQL queries using the SELECT statement. 
 Do not use INSERT, UPDATE, DELETE, DROP, ALTER, or any other modifying operation. 
 Do not include semicolons or comments.
+
+If the user request requires anything other than a SELECT query, do not return SQL. 
+Instead, reply with: "❌ This query is not allowed. Only SELECT queries are permitted."
 """
 
 def run():
@@ -38,13 +40,11 @@ def run():
             try:
                 user_id = st.session_state.get("user", "unknown")
 
-                # Compose prompt messages
                 messages = [
                     {"role": "system", "content": SCHEMA_CONTEXT},
                     {"role": "user", "content": user_prompt}
                 ]
 
-                # GPT response via v1.x client
                 response = client.chat.completions.create(
                     model="gpt-4",
                     messages=messages,
@@ -52,34 +52,38 @@ def run():
                     max_tokens=1000
                 )
 
-                # Remove markdown wrappers if present
                 raw_response = response.choices[0].message.content.strip()
-                sql_query = re.sub(r"^```sql\s*|```$", "", raw_response, flags=re.IGNORECASE).strip()
-
                 usage = response.usage
                 prompt_tokens = usage.prompt_tokens
                 completion_tokens = usage.completion_tokens
                 total_tokens = prompt_tokens + completion_tokens
                 cost_estimate = (prompt_tokens * 0.03 + completion_tokens * 0.06) / 1000
 
-                # Validate SQL safety
-                if not sql_query.lower().startswith("select"):
-                    st.error("⚠️ Only SELECT queries are allowed. This one was blocked.")
-                    return
+                # GPT-denied request
+                if "❌ This query is not allowed" in raw_response:
+                    st.error("GPT flagged this prompt as unsafe:")
+                    st.code(raw_response)
+                else:
+                    # Try to extract valid SQL from markdown
+                    sql_query = re.sub(r"(?is).*?```sql", "", raw_response)
+                    sql_query = re.sub(r"```.*", "", sql_query).strip()
 
-                if any(word in sql_query.lower() for word in ["insert", "update", "delete", "drop", "alter", "create", "truncate"]):
-                    st.error("❌ Unsafe SQL command detected. Query was blocked.")
-                    return
+                    st.code(sql_query, language="sql")
 
-                st.code(sql_query, language="sql")
+                    # Run query
+                    with get_db_cursor() as cursor:
+                        cursor.execute(sql_query)
+                        rows = cursor.fetchall()
+                        columns = [desc[0] for desc in cursor.description]
 
-                # Run query
-                with get_db_cursor() as cursor:
-                    cursor.execute(sql_query)
-                    rows = cursor.fetchall()
-                    columns = [desc[0] for desc in cursor.description]
+                    if rows:
+                        df = pd.DataFrame(rows, columns=columns)
+                        st.dataframe(df)
+                        st.download_button("Download as CSV", df.to_csv(index=False), "report.csv")
+                    else:
+                        st.info("Query ran successfully but returned no results.")
 
-                # Log to ai_prompt_logs
+                # Log prompt, response, and usage
                 with get_db_cursor() as cursor:
                     cursor.execute(
                         """
@@ -89,22 +93,12 @@ def run():
                         )
                         VALUES (%s, %s, %s, %s, %s, %s)
                         """,
-                        (user_prompt, sql_query, datetime.now(), user_id, prompt_tokens, completion_tokens)
+                        (user_prompt, raw_response, datetime.now(), user_id, prompt_tokens, completion_tokens)
                     )
 
-                # Show results
-                if rows:
-                    df = pd.DataFrame(rows, columns=columns)
-                    st.dataframe(df)
-                    st.download_button("Download as CSV", df.to_csv(index=False), "report.csv")
-                else:
-                    st.info("Query ran successfully but returned no results.")
-
-                # Show usage + cost
+                # Show usage/cost
                 st.info(f"🧮 Tokens used: {prompt_tokens} prompt + {completion_tokens} completion = {total_tokens} total")
                 st.caption(f"💵 Estimated cost: ${cost_estimate:.4f}")
-
-                # Tally for session
                 if 'total_tokens_used' not in st.session_state:
                     st.session_state.total_tokens_used = 0
                 st.session_state.total_tokens_used += total_tokens
