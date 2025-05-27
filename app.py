@@ -16,11 +16,9 @@ import pages.internal_movement      as internal_movement
 import pages.landing                as landing
 import pages.adjustments            as adjustments
 import pages.pallet_tools           as pallet_tools
-
-# Import new pages
+import pages.chat_ai                as chat_ai
 import pages.pulltag_upload         as pulltag_upload
 import pages.kitting                as kitting
-# import pages.admin_bulk_export    as admin_bulk_export
 # ──────────────────────────────────────────────────────────────────────────────
 #  Global background helper
 # ──────────────────────────────────────────────────────────────────────────────
@@ -190,6 +188,7 @@ base_pages = [
     "Internal Movement",
     "Pull-tag Upload",
     "Sage Export",
+    "Chat AI",
 ]
 
 # Admin-only pages
@@ -237,4 +236,6 @@ elif choice == "Adjustments":
     adjustments.run()
 elif choice == "Pallet Tools":
     pallet_tools.run()
+elif choice == "Chat AI"
+    chat_ai.run()
 
