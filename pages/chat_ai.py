@@ -1,10 +1,11 @@
 import streamlit as st
-import openai
 import pandas as pd
+from openai import OpenAI
 from db import get_db_cursor
 from datetime import datetime
 
-openai.api_key = st.secrets["openai"]["api_key"]
+# Create OpenAI client
+client = OpenAI(api_key=st.secrets["openai"]["api_key"])
 
 # System prompt: schema reference and safety constraints
 SCHEMA_CONTEXT = """
@@ -36,13 +37,14 @@ def run():
             try:
                 user_id = st.session_state.get("user", "unknown")
 
-                # Ask GPT
+                # Compose prompt messages
                 messages = [
                     {"role": "system", "content": SCHEMA_CONTEXT},
                     {"role": "user", "content": user_prompt}
                 ]
 
-                response = openai.ChatCompletion.create(
+                # GPT response via v1.x client
+                response = client.chat.completions.create(
                     model="gpt-4",
                     messages=messages,
                     temperature=0.2,
@@ -50,13 +52,13 @@ def run():
                 )
 
                 sql_query = response.choices[0].message.content.strip()
-                usage = response['usage']
-                prompt_tokens = usage['prompt_tokens']
-                completion_tokens = usage['completion_tokens']
+                usage = response.usage
+                prompt_tokens = usage.prompt_tokens
+                completion_tokens = usage.completion_tokens
                 total_tokens = prompt_tokens + completion_tokens
                 cost_estimate = (prompt_tokens * 0.03 + completion_tokens * 0.06) / 1000
 
-                # Validate query
+                # Validate SQL safety
                 if not sql_query.lower().startswith("select"):
                     st.error("⚠️ Only SELECT queries are allowed. This one was blocked.")
                     return
@@ -73,7 +75,7 @@ def run():
                     rows = cursor.fetchall()
                     columns = [desc[0] for desc in cursor.description]
 
-                # Log prompt and usage
+                # Log to ai_prompt_logs
                 with get_db_cursor() as cursor:
                     cursor.execute(
                         """
@@ -94,7 +96,7 @@ def run():
                 else:
                     st.info("Query ran successfully but returned no results.")
 
-                # Show usage
+                # Show usage + cost
                 st.info(f"🧮 Tokens used: {prompt_tokens} prompt + {completion_tokens} completion = {total_tokens} total")
                 st.caption(f"💵 Estimated cost: ${cost_estimate:.4f}")
 
