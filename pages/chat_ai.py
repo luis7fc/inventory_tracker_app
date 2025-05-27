@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import re
 from openai import OpenAI
 from db import get_db_cursor
 from datetime import datetime
@@ -51,7 +52,10 @@ def run():
                     max_tokens=1000
                 )
 
-                sql_query = response.choices[0].message.content.strip()
+                # Remove markdown wrappers if present
+                raw_response = response.choices[0].message.content.strip()
+                sql_query = re.sub(r"^```sql\s*|```$", "", raw_response, flags=re.IGNORECASE).strip()
+
                 usage = response.usage
                 prompt_tokens = usage.prompt_tokens
                 completion_tokens = usage.completion_tokens
