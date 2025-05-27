@@ -1,4 +1,4 @@
-# pages/submit_transaction.py
+# pages/receiving.py
 
 import streamlit as st
 import math
@@ -10,7 +10,7 @@ SKIP_SCAN_CHECK_LOCATIONS = ("VKIT", "SKIT", "FKIT", "IKIT", "GKIT")
 
 
 def run():
-    st.header("📑 Submit Transaction — Receiving")
+    st.header("📑 Receiving")
 
     # PO-level input
     po_number = st.text_input("PO Number", key="recv_po_number")
