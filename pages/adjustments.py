@@ -24,7 +24,7 @@ SKIP_SCAN_CHECK_LOCATIONS: tuple[str, ...] = ()
 # ─────────────────────────────────────────────
 
 def insert_pulltag_line(cur, job, lot, code, qty, loc, tx_type, note):
-    """Insert a pull‑tag row and resolve warehouse via location."""
+    """Insert a pull-tag row and resolve warehouse via location."""
 
     cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (loc,))
     row = cur.fetchone()
@@ -50,8 +50,8 @@ def insert_pulltag_line(cur, job, lot, code, qty, loc, tx_type, note):
     return cur.fetchone()[0]
 
 
-def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, warehouse, progress_cb=None):
-    """Validate scans and update inventory / transactions for scan‑tracked items."""
+def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, warehouse, note, progress_cb=None):
+    """Validate scans and update inventory / transactions for scan-tracked items."""
 
     if progress_cb is None:
         progress_cb = lambda *_: None
@@ -70,7 +70,9 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
                 else:
                     scan_map[(code, job, lot)].append(sid)
 
-    duplicates = [s for s, c in Counter([s for v in scan_map.values() for s in v]).items() if c > 1]
+    duplicates = [
+        s for s, c in Counter([s for v in scan_map.values() for s in v]).items() if c > 1
+    ]
     if duplicates:
         errors.append("Duplicate scan IDs: " + ", ".join(duplicates))
 
@@ -85,33 +87,53 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
             tx_type = "Return" if to_loc and not from_loc else "Job Issue"
             loc_val = to_loc if tx_type == "Return" else from_loc
 
-            # single‑item location guard
-            cur.execute("SELECT multi_item_allowed FROM locations WHERE location_code=%s", (loc_val,))
+            # single-item location guard
+            cur.execute(
+                "SELECT multi_item_allowed FROM locations WHERE location_code=%s", (loc_val,)
+            )
             flag = cur.fetchone()
             multi_ok = bool(flag and flag[0])
             if not multi_ok:
                 cur.execute(
-                    "SELECT DISTINCT item_code FROM current_inventory WHERE location=%s AND quantity>0", 
+                    """
+                    SELECT DISTINCT item_code FROM current_inventory
+                    WHERE location=%s AND quantity>0
+                    """,
                     (loc_val,),
                 )
                 present = [r[0] for r in cur.fetchall()]
                 if present and any(p != code for p in present):
-                    raise Exception(f"Location '{loc_val}' currently holds other items ({', '.join(present)}).")
+                    raise Exception(
+                        f"Location '{loc_val}' currently holds other items ({', '.join(present)})."
+                    )
 
             for sid in sid_list:
+                # record scan verification
+                cur.execute(
+                    """
+                    INSERT INTO scan_verifications
+                      (scan_id, item_code, job_number, lot_number, location, scanned_by, scanned_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    """,
+                    (sid, code, job, lot, loc_val, user),
+                )
+
                 # scan location lookup
                 cur.execute(
-                    "SELECT item_code, location FROM current_scan_location WHERE scan_id=%s", 
+                    "SELECT item_code, location FROM current_scan_location WHERE scan_id=%s",
                     (sid,),
                 )
                 prev = cur.fetchone()
 
                 if tx_type == "Return":
                     if prev and prev[0] != code:
-                        raise Exception(f"Scan '{sid}' registered to {prev[0]} in {prev[1]}.")
+                        raise Exception(
+                            f"Scan '{sid}' registered to {prev[0]} in {prev[1]}."  # noqa:E501
+                        )
                     cur.execute(
                         """
-                        INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
+                        INSERT INTO current_scan_location
+                          (scan_id, item_code, location, updated_at)
                         VALUES (%s, %s, %s, NOW())
                         ON CONFLICT (scan_id) DO UPDATE
                                SET item_code=EXCLUDED.item_code,
@@ -122,21 +144,31 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
                     )
                 else:  # Job Issue
                     if not prev or prev[0] != code or prev[1] != from_loc:
-                        raise Exception(f"Scan '{sid}' not found in expected location {from_loc}.")
-                    cur.execute("DELETE FROM current_scan_location WHERE scan_id=%s", (sid,))
+                        raise Exception(
+                            f"Scan '{sid}' not found in expected location {from_loc}."
+                        )
+                    cur.execute(
+                        "DELETE FROM current_scan_location WHERE scan_id=%s", (sid,)
+                    )
 
-                # record transaction
+                # record transaction with note
                 loc_col = "to_location" if tx_type == "Return" else "from_location"
                 cur.execute(
-                    f"INSERT INTO transactions (transaction_type, date, warehouse, {loc_col}, job_number, lot_number, item_code, quantity, user_id) VALUES (%s, NOW(), %s, %s, %s, %s, %s, 1, %s)",
-                    (tx_type, warehouse, loc_val, job, lot, code, user),
+                    f"""
+                    INSERT INTO transactions
+                      (transaction_type, date, warehouse, {loc_col},
+                       job_number, lot_number, item_code, quantity, note, user_id)
+                    VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (tx_type, warehouse, loc_val, job, lot, code, 1, note, user),
                 )
 
                 # update inventory
                 delta = 1 if tx_type == "Return" else -1
                 cur.execute(
                     """
-                    INSERT INTO current_inventory (item_code, location, warehouse, quantity)
+                    INSERT INTO current_inventory
+                      (item_code, location, warehouse, quantity)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (item_code, location, warehouse) DO UPDATE
                         SET quantity = current_inventory.quantity + EXCLUDED.quantity
@@ -153,12 +185,12 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, wa
 # ─────────────────────────────────────────────
 
 def run():
-    st.title("🛠️ Post‑Kitting Adjustments")
+    st.title("🛠️ Post-Kitting Adjustments")
 
-    tx_type   = st.selectbox("Transaction Type", ["ADD", "RETURNB"])
+    tx_type = st.selectbox("Transaction Type", ["ADD", "RETURNB"])
     warehouse = st.selectbox("Warehouse", WAREHOUSES)
-    location  = st.text_input("Location")
-    note      = st.text_input("Note (optional)")
+    location = st.text_input("Location")
+    note = st.text_input("Note (optional)")
 
     # Persistent list of adjustment rows
     adjustments = st.session_state.setdefault("adj_rows", [])
@@ -166,18 +198,21 @@ def run():
     # ── Entry form ───────────────────────────
     with st.expander("➕ Add Row"):
         c1, c2, c3, c4 = st.columns([2, 2, 3, 1])
-        job  = c1.text_input("Job #")
-        lot  = c2.text_input("Lot #")
+        job = c1.text_input("Job #")
+        lot = c2.text_input("Lot #")
         code = c3.text_input("Item Code")
-        qty  = c4.number_input("Qty", min_value=1, value=1)
+        qty = c4.number_input("Qty", min_value=1, value=1)
 
         if st.button("Add to List"):
             if all([job.strip(), lot.strip(), code.strip(), qty > 0]):
                 with get_db_cursor() as cur:
-                    cur.execute("SELECT item_description, scan_required FROM items_master WHERE item_code=%s", (code.strip(),))
+                    cur.execute(
+                        "SELECT item_description, scan_required FROM items_master WHERE item_code=%s",
+                        (code.strip(),),
+                    )
                     data = cur.fetchone()
                 description = data[0] if data else "(Unknown)"
-                scan_req    = bool(data and data[1])
+                scan_req = bool(data and data[1])
 
                 adjustments.append({
                     "job": job.strip(),
@@ -223,15 +258,13 @@ def run():
             st.stop()
 
         # Build scans_needed map
-        scans_needed: dict = {}
+        scans_needed = {}
         for row in adjustments:
             if row["scan_required"]:
                 scans_needed.setdefault(row["code"], {})[(row["job"], row["lot"]) ] = row["qty"]
 
         # Gather scan inputs
-        scan_inputs = {
-            k: v for k, v in st.session_state.items() if k.startswith("scan_")
-        }
+        scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
 
         try:
             # Process scanned items
@@ -243,24 +276,23 @@ def run():
                     to_loc=location if tx_type == "RETURNB" else "",
                     user=st.session_state.get("user_id", 0),
                     warehouse=warehouse,
+                    note=note,
                 )
 
-            # Process non-scan adjustments
+            # Always create pulltag rows for every adjustment
             for row in adjustments:
-                if not row["scan_required"]:
-                    with get_db_cursor() as cur:
-                        insert_pulltag_line(
-                            cur,
-                            row["job"],
-                            row["lot"],
-                            row["code"],
-                            row["qty"],
-                            location,
-                            tx_type,
-                            note,
-                        )
+                with get_db_cursor() as cur:
+                    insert_pulltag_line(
+                        cur,
+                        row["job"],
+                        row["lot"],
+                        row["code"],
+                        row["qty"],
+                        location,
+                        tx_type,
+                        note,
+                    )
 
-            # Success feedback
             st.success(random.choice(IRISH_TOASTS))
             st.session_state["adj_rows"] = []
 
