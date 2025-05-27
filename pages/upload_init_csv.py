@@ -118,6 +118,27 @@ def run():
                             (item_code, location, quantity, warehouse)
                         )
 
+                        #transactions table audit log entry
+                        user_id = st.session_state.get("user", "unknown")
+                        cursor.execute(
+                            """
+                            INSERT INTO transactions (
+                                transaction_type, item_code, quantity, date,
+                                job_number, lot_number, po_number,
+                                from_location, to_location, user_id,
+                                bypassed_warning, note, warehouse
+                            )
+                            VALUES (
+                                'Init', %s, %s, NOW(),
+                                NULL, NULL, NULL,
+                                NULL, %s, %s,
+                                FALSE, NULL, %s
+                            )
+                            """,
+                            (item_code, quantity, location, user_id, warehouse)
+                        )
+
+
                 st.success("🎉 Inventory and scan data successfully committed to the database.")
 
         except Exception as e:
