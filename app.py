@@ -236,6 +236,6 @@ elif choice == "Adjustments":
     adjustments.run()
 elif choice == "Pallet Tools":
     pallet_tools.run()
-elif choice == "Chat AI"
+elif choice == "Chat AI":
     chat_ai.run()
 
