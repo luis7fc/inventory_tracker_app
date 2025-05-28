@@ -195,7 +195,7 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, no
                         raise Exception(f"Location '{loc_val}' holds other items: {', '.join(present)}.")
 
                 for sid in sid_list:
-                    cur.execute("SELECT transaction_type, location, date FROM scan_verifications WHERE scan_id = %s ORDER BY scan_time ASC", (sid,))
+                    cur.execute("SELECT transaction_type, location, scan_time FROM scan_verifications WHERE scan_id = %s ORDER BY scan_time ASC", (sid,))
                     history = cur.fetchall()
                     if history:
                         tx_count = Counter([h[0] for h in history])
