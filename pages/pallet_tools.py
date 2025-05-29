@@ -50,7 +50,7 @@ def run():
     st.title("🔄 Pallet Decomposition / Recomposition Tool")
 
     if st.button("Reset Page"):
-        st.experimental_rerun()
+        st.rerun()
 
     item_code = st.text_input("Item Code")
     action_type = st.radio("Action", ["Decompose", "Recompose"])
