@@ -4,7 +4,6 @@ from io import StringIO
 from db import get_db_cursor
 
 # Manual parsing based on fixed field positions, handling embedded commas and quotes
-
 def parse_to_records(txt_file):
     """
     Parse a TXT file and return a list of dicts for each valid IL row without inserting.
@@ -59,22 +58,10 @@ def parse_to_records(txt_file):
 
 def parse_and_insert(records):
     insert_count = 0
-    skipped = []
+    skipped = []  # Retained for interface compatibility; not used
 
     with get_db_cursor() as cursor:
         for rec in records:
-            cursor.execute(
-                """
-                SELECT 1 FROM pulltags
-                WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                  AND transaction_type IN ('Job Issue', 'Return')
-                """,
-                (rec['job_number'], rec['lot_number'], rec['item_code'])
-            )
-            if cursor.fetchone():
-                skipped.append(f"{rec['job_number']} / {rec['lot_number']} / {rec['item_code']}")
-                continue
-
             cursor.execute(
                 """
                 INSERT INTO pulltags
@@ -123,13 +110,7 @@ def run():
     edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
     if st.button("Commit Parsed Pull-tags to DB"):
-        total_inserted = 0
-        inserted, skipped = parse_and_insert(edited_df.to_dict("records"))
-        total_inserted += inserted
-
-        if skipped:
-            st.warning(f"⚠️ Skipped {len(skipped)} duplicate rows:")
-            st.code("\n".join(skipped))
+        total_inserted, skipped = parse_and_insert(edited_df.to_dict("records"))
 
         for f in new_files:
             st.session_state.processed_files.add(f.name)
