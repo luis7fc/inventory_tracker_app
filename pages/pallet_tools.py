@@ -21,15 +21,15 @@ def location_to_warehouse(location):
         result = cursor.fetchone()
         return result[0] if result else "UNKNOWN"
 
-def insert_verification(scan_id, item_code, location, transaction_type, scanned_by):
+def insert_verification(scan_id, item_code, location, transaction_type, scanned_by, parent_id=None):
     with get_db_cursor() as cursor:
         cursor.execute("""
             INSERT INTO scan_verifications (
                 item_code, job_number, lot_number, scan_time, scan_id,
                 location, transaction_type, warehouse, scanned_by, pulltag_id
-            ) VALUES (%s, NULL, NULL, %s, %s, %s, %s, %s, %s, NULL)
+            ) VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, NULL)
         """, (
-            item_code, datetime.now(), scan_id,
+            item_code, parent_id, datetime.now(), scan_id,
             location, transaction_type, location_to_warehouse(location), scanned_by
         ))
 
@@ -93,7 +93,7 @@ def run():
 
                     for sid in new_ids:
                         insert_scan_location(sid, item_code, location)
-                        insert_verification(sid, item_code, location, "Decomposed Product", scanned_by)
+                        insert_verification(sid, item_code, location, "Decomposed Product", scanned_by, parent_id=pallet_id)
 
                     st.success(f"✅ Decomposed pallet {pallet_id} into {qty} scans.")
                     st.session_state.pop("validated_pallet", None)
