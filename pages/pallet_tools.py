@@ -25,11 +25,11 @@ def insert_verification(scan_id, item_code, location, transaction_type, scanned_
     with get_db_cursor() as cursor:
         cursor.execute("""
             INSERT INTO scan_verifications (
-                id, item_code, job_number, lot_number, scan_time, scan_id,
+                item_code, job_number, lot_number, scan_time, scan_id,
                 location, transaction_type, warehouse, scanned_by, pulltag_id
-            ) VALUES (%s, %s, NULL, NULL, %s, %s, %s, %s, %s, %s, NULL)
+            ) VALUES (%s, NULL, NULL, %s, %s, %s, %s, %s, %s, NULL)
         """, (
-            str(uuid4()), item_code, datetime.now(), scan_id,
+            item_code, datetime.now(), scan_id,
             location, transaction_type, location_to_warehouse(location), scanned_by
         ))
 
