@@ -6,7 +6,6 @@ import tempfile
 from psycopg2 import IntegrityError
 from db import (
     get_pulltag_rows,
-    submit_kitting,
     get_db_cursor,
     insert_pulltag_line,
     update_pulltag_line,
@@ -14,7 +13,12 @@ from db import (
 )
 import os
 
+EDIT_ANCHOR = "scan-edit"          # <--- add me near the top of the file (global)
 #Helper Functions
+
+def user_error(msg: str):
+    st.error(f"❌ {msg}")
+    st.stop()
 
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None):
     """
@@ -93,13 +97,21 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
 
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
     expected_count = total_scans
+   #New code for user friendliness
+    #"""
+    #Ensures the user has scanned the right number of items before committing.
+    #Returns True when everything is OK, otherwise shows an on-page error
+    #message and aborts further processing for this run-through.
+    #"""
     actual_count = len(scan_inputs)
-
     if actual_count != expected_count:
-        raise Exception(f"Expected {expected_count} scans but received {actual_count}. Please recheck scan list.")
-
-    #flat_scan_list = list(scan_inputs.values())
-    #done = 0
+        st.error(
+            f"❌  Expected **{expected_count}** scans but received "
+            f"**{actual_count}**.  \n\n"
+            "• Re-scan the missing items **or**   \n"
+            "• Adjust the quantity if the job really changed, then click **Finalize** again."
+        )
+        st.stop()          # <- prevents the rest of the callback from running
 
     with get_db_cursor() as cur:
         # Group scan_inputs by item_code
@@ -315,7 +327,6 @@ def run():
             st.warning(f"Job {job}, Lot {lot} is locked from Issue edits (status: kitted/processed).")
             continue
 
-
         headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
         with st.container():
             cols = st.columns([1, 3, 1, 1, 1, 1, 1])
@@ -438,6 +449,7 @@ def run():
             break
         
     # UI toggle
+    st.markdown(f"<div id='{EDIT_ANCHOR}'></div>", unsafe_allow_html=True)
     edit_mode = st.toggle("✏️ Edit Scan Entries", value=False)
     
     # Editable Table View
@@ -493,28 +505,38 @@ def run():
                 with st.spinner("Processing scans…"):
                     def update_progress(pct: int):
                         progress_bar.progress(pct)
-    
-                    if tx_type == "Issue":
-                        finalize_scans(
-                            scans_needed,
-                            scan_inputs,
-                            st.session_state.job_lot_queue,
-                            from_location=location,
-                            to_location=None,
-                            scanned_by=sb,
-                            progress_callback=update_progress
+                    try:
+                        
+                        if tx_type == "Issue":
+                            finalize_scans(
+                                scans_needed,
+                                scan_inputs,
+                                st.session_state.job_lot_queue,
+                                from_location=location,
+                                to_location=None,
+                                scanned_by=sb,
+                                progress_callback=update_progress
+                            )
+                        else:
+                            finalize_scans(
+                                scans_needed,
+                                scan_inputs,
+                                st.session_state.job_lot_queue,
+                                from_location=None,
+                                to_location=location,
+                                scanned_by=sb,
+                                progress_callback=update_progress
+                            )
+                    except Exception as e:
+                        #Friendly banner + link that scrolls the user back to the edit box
+                        st.error(
+                            f"❌ {e}  \n\n"
+                            f"[➡️ Jump to **Edit Scan Entries**](#{EDIT_ANCHOR})"
                         )
-                    else:
-                        finalize_scans(
-                            scans_needed,
-                            scan_inputs,
-                            st.session_state.job_lot_queue,
-                            from_location=None,
-                            to_location=location,
-                            scanned_by=sb,
-                            progress_callback=update_progress
-                        )
-    
+                        # forces the browser to respect the anchor even if the banner is low down
+                        st.experimental_set_query_params(anchor=EDIT_ANCHOR)
+                        st.stop()
+                            
                 st.success("Scans verified and inventory updated.")
                
                 item_map = {}
