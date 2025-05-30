@@ -4,7 +4,9 @@ from io import StringIO
 from db import get_db_cursor
 
 # Manual parsing based on fixed field positions, handling embedded commas and quotes
+
 def parse_to_records(txt_file):
+    
     """
     Parse a TXT file and return a list of dicts for each valid IL row without inserting.
     Fields: warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code
@@ -14,20 +16,29 @@ def parse_to_records(txt_file):
     records = []
 
     for line in text.splitlines():
+        # Only process lines that start with IL,
         if not line.startswith("IL,"):
             continue
         cols = line.split(",")
+        # We expect at least 11 columns (before considering embedded commas in description)
         if len(cols) < 11:
             continue
 
+        # Fixed trailing fields count: conversion_factor, equipment_id, equipment_cost_code,
+        # job_number, lot_number, cost_code, category, requisition_number, issue_date
         TRAILING = 9
         L = len(cols)
+
+        # Extract description from cols[5] up to cols[L-TRAILING-1]
         desc_parts = cols[5: L - TRAILING]
         description = ",".join(desc_parts).strip()
+        # Remove outer quotes if double-quoted
         if description.startswith('"') and description.endswith('"'):
             description = description[1:-1]
+        # Strip any whitespace
         description = description.strip()
 
+        # Map other fields
         warehouse  = cols[1].strip()
         item_code  = cols[2].strip()
         qty_str    = cols[3].strip()
@@ -36,6 +47,7 @@ def parse_to_records(txt_file):
         lot_number = cols[-5].strip()
         cost_code  = cols[-4].strip()
 
+        # Validate quantity
         try:
             quantity = int(qty_str)
         except ValueError:
@@ -53,15 +65,34 @@ def parse_to_records(txt_file):
             "lot_number": lot_number,
             "cost_code": cost_code
         })
+    # Reset file pointer for potential reuse
     txt_file.seek(0)
     return records
 
-def parse_and_insert(records):
+def parse_and_insert(txt_file):
+    """
+    Insert parsed IL rows from txt_file into the pulltags table.
+    Prevents duplicate inserts for Job Issue/Return types.
+    Returns inserted count and skipped row summaries.
+    """
+    records = parse_to_records(txt_file)
     insert_count = 0
-    skipped = []  # Retained for interface compatibility; not used
+    skipped = []  # collect skipped rows for user feedback
 
     with get_db_cursor() as cursor:
         for rec in records:
+            cursor.execute(
+                """
+                SELECT 1 FROM pulltags
+                WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                  AND transaction_type IN ('Job Issue', 'Return')
+                """,
+                (rec['job_number'], rec['lot_number'], rec['item_code'])
+            )
+            if cursor.fetchone():
+                skipped.append(f"{rec['job_number']} / {rec['lot_number']} / {rec['item_code']}")
+                continue
+
             cursor.execute(
                 """
                 INSERT INTO pulltags
@@ -79,8 +110,9 @@ def parse_and_insert(records):
 
     return insert_count, skipped
 
+
 def run():
-    st.title("\U0001F4C2 Bulk Pull-tag TXT Upload")
+    st.title("📂 Bulk Pull-tag TXT Upload")
 
     if 'processed_files' not in st.session_state:
         st.session_state.processed_files = set()
@@ -93,11 +125,13 @@ def run():
     if not uploaded_files:
         return
 
+    # Only consider new files
     new_files = [f for f in uploaded_files if f.name not in st.session_state.processed_files]
     if not new_files:
         st.info("No new files to preview; all uploaded files have been processed.")
         return
 
+    # Preview parsed data
     all_records = []
     for f in new_files:
         all_records.extend(parse_to_records(f))
@@ -106,18 +140,25 @@ def run():
         return
 
     df = pd.DataFrame(all_records)
-    st.subheader("Editable Parsed Pull-tag Rows")
-    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    st.subheader("Preview Parsed Pull-tag Rows")
+    st.dataframe(df)
 
+    # Commit button
     if st.button("Commit Parsed Pull-tags to DB"):
-        total_inserted, skipped = parse_and_insert(edited_df.to_dict("records"))
-
+        total_inserted = 0
         for f in new_files:
+            inserted, skipped = parse_and_insert(f)
+            total_inserted += inserted
+            if skipped:
+                st.warning(f"⚠️ Skipped {len(skipped)} duplicate rows:")
+                st.code("\n".join(skipped))
+
             st.session_state.processed_files.add(f.name)
 
         st.success(f"✅ Inserted {total_inserted} rows into pulltags")
         st.info("Done processing and committing pull-tag files.")
 
+        # Show final reset option
         if st.button("✅ Click here to clear the page."):
             st.session_state.pop("processed_files", None)
             st.rerun()
