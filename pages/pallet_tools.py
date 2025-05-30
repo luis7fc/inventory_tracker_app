@@ -10,10 +10,10 @@ def get_scan_location(scan_id):
         result = cursor.fetchone()
         return {"scan_id": result[0], "item_code": result[1], "location": result[2]} if result else None
 
-def scan_id_exists(scan_id):
+def check_existing_scan_ids(scan_ids):
     with get_db_cursor() as cursor:
-        cursor.execute("SELECT 1 FROM scan_verifications WHERE scan_id = %s", (scan_id,))
-        return cursor.fetchone() is not None
+        cursor.execute("SELECT scan_id FROM scan_verifications WHERE scan_id = ANY(%s)", (scan_ids,))
+        return {row[0] for row in cursor.fetchall()}
 
 def location_to_warehouse(location):
     with get_db_cursor() as cursor:
@@ -21,31 +21,28 @@ def location_to_warehouse(location):
         result = cursor.fetchone()
         return result[0] if result else "UNKNOWN"
 
-def insert_verification(scan_id, item_code, location, transaction_type, scanned_by, parent_id=None):
-    with get_db_cursor() as cursor:
-        cursor.execute("""
-            INSERT INTO scan_verifications (
-                item_code, job_number, lot_number, scan_time, scan_id,
-                location, transaction_type, warehouse, scanned_by, pulltag_id
-            ) VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, NULL)
-        """, (
-            item_code, parent_id, datetime.now(), scan_id,
-            location, transaction_type, location_to_warehouse(location), scanned_by
-        ))
+def insert_verification(cursor, scan_id, item_code, location, transaction_type, scanned_by, job_number):
+    cursor.execute("""
+        INSERT INTO scan_verifications (
+            id, item_code, job_number, lot_number, scan_time, scan_id,
+            location, transaction_type, warehouse, scanned_by
+        ) VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s, %s)
+    """, (
+        str(uuid4()), item_code, job_number, datetime.now(), scan_id,
+        location, transaction_type, location_to_warehouse(location), scanned_by
+    ))
 
-def delete_scan_location(scan_id):
-    with get_db_cursor() as cursor:
-        cursor.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (scan_id,))
+def delete_scan_location(cursor, scan_id):
+    cursor.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (scan_id,))
 
-def insert_scan_location(scan_id, item_code, location):
-    with get_db_cursor() as cursor:
-        cursor.execute("""
-            INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
-            VALUES (%s, %s, %s, %s)
-        """, (scan_id, item_code, location, datetime.now()))
+def insert_scan_location(cursor, scan_id, item_code, location):
+    cursor.execute("""
+        INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
+        VALUES (%s, %s, %s, %s)
+    """, (scan_id, item_code, location, datetime.now()))
 
 def run():
-    st.title("\U0001F501 Pallet Decomposition Tool")
+    st.title("🔄 Pallet Decomposition Tool")
 
     if st.button("Reset Page"):
         for key in ["validated_pallet", "decompose_scans"]:
@@ -54,7 +51,6 @@ def run():
 
     item_code = st.text_input("Item Code").strip()
     location = st.text_input("Expected Location").strip()
-    scanned_by = st.text_input("Username", "admin")
     pallet_id = st.text_input("Pallet Scan ID")
     qty = st.number_input("How many unit scan_ids?", min_value=1, step=1)
 
@@ -77,27 +73,33 @@ def run():
 
             if submitted:
                 new_ids = [s.strip() for s in raw_input.replace(",", "\n").splitlines() if s.strip()]
-
                 if len(new_ids) != qty:
                     st.error(f"❌ Expected {qty} scan IDs but got {len(new_ids)}.")
                     return
 
-                dupes = [sid for sid in new_ids if scan_id_exists(sid)]
-                if dupes:
-                    st.error(f"❌ These scan_ids already exist: {', '.join(dupes)}")
+                existing_ids = check_existing_scan_ids(new_ids)
+                if existing_ids:
+                    st.error(f"❌ These scan_ids already exist: {', '.join(existing_ids)}")
                     return
 
+                warehouse = location_to_warehouse(location)
+                if warehouse == "UNKNOWN":
+                    st.error(f"❌ Invalid location: {location}. Please verify it exists in the system.")
+                    return
+
+                scanned_by = st.session_state.get("username", "system")
+
                 try:
-                    delete_scan_location(pallet_id)
-                    insert_verification(pallet_id, item_code, location, "Decomposed", scanned_by)
-
-                    for sid in new_ids:
-                        insert_scan_location(sid, item_code, location)
-                        insert_verification(sid, item_code, location, "Decomposed Product", scanned_by, parent_id=pallet_id)
-
-                    st.success(f"✅ Decomposed pallet {pallet_id} into {qty} scans.")
-                    st.session_state.pop("validated_pallet", None)
-
+                    with get_db_cursor() as cursor:
+                        cursor.execute("BEGIN")
+                        delete_scan_location(cursor, pallet_id)
+                        insert_verification(cursor, pallet_id, item_code, location, "Decomposed", scanned_by, pallet_id)
+                        for sid in new_ids:
+                            insert_scan_location(cursor, sid, item_code, location)
+                            insert_verification(cursor, sid, item_code, location, "Decomposed Product", scanned_by, pallet_id)
+                        cursor.execute("COMMIT")
+                        st.success(f"✅ Decomposed pallet {pallet_id} into {qty} scans.")
+                        st.session_state.pop("validated_pallet", None)
                 except Exception as e:
-                    st.error(f"❌ Decomposition failed: {e}")
-                    st.stop()
+                    cursor.execute("ROLLBACK")
+                    st.error(f"❌ Transaction failed: {e}")
