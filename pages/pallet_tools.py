@@ -26,8 +26,8 @@ def insert_verification(scan_id, item_code, location, transaction_type, scanned_
         cursor.execute("""
             INSERT INTO scan_verifications (
                 id, item_code, job_number, lot_number, scan_time, scan_id,
-                location, transaction_type, warehouse, scanned_by
-            ) VALUES (%s, %s, NULL, NULL, %s, %s, %s, %s, %s, %s)
+                location, transaction_type, warehouse, scanned_by, pulltag_id
+            ) VALUES (%s, %s, NULL, NULL, %s, %s, %s, %s, %s, %s, NULL)
         """, (
             str(uuid4()), item_code, datetime.now(), scan_id,
             location, transaction_type, location_to_warehouse(location), scanned_by
@@ -45,7 +45,7 @@ def insert_scan_location(scan_id, item_code, location):
         """, (scan_id, item_code, location, datetime.now()))
 
 def run():
-    st.title("🔄 Pallet Decomposition Tool")
+    st.title("\U0001F501 Pallet Decomposition Tool")
 
     if st.button("Reset Page"):
         for key in ["validated_pallet", "decompose_scans"]:
@@ -77,19 +77,27 @@ def run():
 
             if submitted:
                 new_ids = [s.strip() for s in raw_input.replace(",", "\n").splitlines() if s.strip()]
+
                 if len(new_ids) != qty:
                     st.error(f"❌ Expected {qty} scan IDs but got {len(new_ids)}.")
-                elif any(scan_id_exists(sid) for sid in new_ids):
-                    dupes = [sid for sid in new_ids if scan_id_exists(sid)]
+                    return
+
+                dupes = [sid for sid in new_ids if scan_id_exists(sid)]
+                if dupes:
                     st.error(f"❌ These scan_ids already exist: {', '.join(dupes)}")
-                else:
-                    try:
-                        delete_scan_location(pallet_id)
-                        insert_verification(pallet_id, item_code, location, "Decomposed", scanned_by)
-                        for sid in new_ids:
-                            insert_scan_location(sid, item_code, location)
-                            insert_verification(sid, item_code, location, "Decomposed Product", scanned_by)
-                        st.success(f"✅ Decomposed pallet {pallet_id} into {qty} scans.")
-                        st.session_state.pop("validated_pallet", None)
-                    except Exception as e:
-                        st.error(f"❌ Transaction failed: {e}")
+                    return
+
+                try:
+                    delete_scan_location(pallet_id)
+                    insert_verification(pallet_id, item_code, location, "Decomposed", scanned_by)
+
+                    for sid in new_ids:
+                        insert_scan_location(sid, item_code, location)
+                        insert_verification(sid, item_code, location, "Decomposed Product", scanned_by)
+
+                    st.success(f"✅ Decomposed pallet {pallet_id} into {qty} scans.")
+                    st.session_state.pop("validated_pallet", None)
+
+                except Exception as e:
+                    st.error(f"❌ Decomposition failed: {e}")
+                    st.stop()
