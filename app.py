@@ -19,6 +19,7 @@ import pages.pallet_tools           as pallet_tools
 import pages.chat_ai                as chat_ai
 import pages.pulltag_upload         as pulltag_upload
 import pages.kitting                as kitting
+import pages.testing                as testing
 # ──────────────────────────────────────────────────────────────────────────────
 #  Global background helper
 # ──────────────────────────────────────────────────────────────────────────────
@@ -197,6 +198,7 @@ admin_pages = [
     "Upload Init CSV",
     "Manage Locations",
     "Users",
+    "Testing",
 ]
 
 # Combine pages based on role
@@ -238,4 +240,6 @@ elif choice == "Pallet Tools":
     pallet_tools.run()
 elif choice == "Chat AI":
     chat_ai.run()
+elif choice == "Testing":
+    testing.run()
 
