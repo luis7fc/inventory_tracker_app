@@ -140,7 +140,13 @@ def run():
     st.title("📦 Multi-Lot Job Kitting")
     if 'job_lot_queue' not in st.session_state:
         st.session_state.job_lot_queue = []
- 
+    if 'pulltag_editor_df' not in st.session_state:
+        st.session_state.pulltag_editor_df = {}
+    if "location" not in st.session_state:
+        st.session_state.location = ""
+
+    st.session_state.location = st.text_input("Staging Location", value=st.session_state.location, key="kitting_location")
+
     with st.form("add_joblot", clear_on_submit=True):
         job = st.text_input("Job Number")
         lot = st.text_input("Lot Number")
