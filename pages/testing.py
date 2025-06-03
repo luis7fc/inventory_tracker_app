@@ -143,6 +143,7 @@ def bootstrap_state():
         "scan_buffer": [],   # list[(job, lot, item, scan_id)]
         "user": st.experimental_user.get("username", "unknown"),
         "confirm_kitting": False,
+        "locked":False,
     }
     for k, v in base.items():
         st.session_state.setdefault(k, v)
@@ -202,7 +203,7 @@ def finalise():
         if not bad.empty:
             st.error("Negative qty only allowed on Return lines.")
             return
-    summaries, tx, scans, inv, upd, dels, note_upd = [], [], [], [], [], [], []
+    summaries, tx, scans, inv, upd, dels, note_upd, qty_upd = [], [], [], [], [], [], []
     sb = st.session_state.scan_buffer
 
     # 2️⃣ build changes
@@ -236,6 +237,8 @@ def finalise():
             upd.append(("kitted" if tx_type == "Job Issue" else "returned", job, lot, ic))
             if r["note"]:
                 note_upd.append((r["note"], job, lot, ic))
+                qty_upd.append((qty, job, lot, ic))  # qty is already int from kitted_qty
+
 
     # 3️⃣ commit
     try:
@@ -253,6 +256,12 @@ def finalise():
                 cur.executemany("""UPDATE pulltags SET status=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", upd)
             if note_upd:
                 cur.executemany("""UPDATE pulltags SET note=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", note_upd)
+            if qty_upd:
+                cur.executemany("""
+                    UPDATE pulltags 
+                    SET quantity = %s, last_updated = NOW()
+                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                """, qty_upd)
             if dels:
                 cur.executemany("""DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s""", dels)
             cur.connection.commit()
@@ -289,13 +298,27 @@ def run():
     # ─── Staging Location ─────────────────────────────────────────────────────
     st.session_state.location = st.text_input("Staging Location", value=st.session_state.location or "")
 
-    # ─── Scan Entry ───────────────────────────────────────────────────────────
-    with st.expander("🔍 Scan Input"):
-        render_scan_inputs()
+    # ─── Lock/Unlock Quantities ─────────────────────────────────────────────────
+    lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
+    if st.button(lock_btn_text):
+        st.session_state.locked = not st.session_state.locked
+        if not st.session_state.locked:
+            st.session_state.scan_buffer.clear()
+            st.info("Quantities unlocked. Scan buffer cleared.")
+        else:
+            st.success("Quantities locked. Scanning enabled.")
+    
 
-        if st.session_state.scan_buffer:
-            st.markdown("### 📋 Scan Buffer")
-            st.table(pd.DataFrame(st.session_state.scan_buffer, columns=["Job", "Lot", "Item", "Scan ID"]))
+    # ─── Scan Entry ───────────────────────────────────────────────────────────
+    if st.session_state.locked:
+        with st.expander("🔍 Scan Input"):
+            render_scan_inputs()
+            if st.session_state.scan_buffer:
+                st.markdown("### 📋 Scan Buffer")
+                st.table(pd.DataFrame(st.session_state.scan_buffer, columns=["Job", "Lot", "Item", "Scan ID"]))
+                if st.button("🧹 Clear Scan Buffer"):
+                    st.session_state.scan_buffer.clear()
+                    st.success("Scan buffer cleared.")
 
     # ─── Pull‑Tag Editors 
     for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
@@ -313,17 +336,37 @@ def run():
                 key=f"{EDIT_ANCHOR}_{job}_{lot}",
                 num_rows="dynamic",
                 use_container_width=True,
+                disabled=st.session_state.locked,
                 column_config={
+                    "item_code": st.column_config.TextColumn("Item Code", disabled=True),
+                    "description": st.column_config.TextColumn("Description", disabled=True),
+                    "qty_req": st.column_config.NumberColumn("Qty Required", disabled=True),
                     "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
                     "note": st.column_config.TextColumn("Notes"),
                 }
             )
-            # Update session copy
+            
+                        
+            # Update session copy + detect changes
+            changes_made = False
             for i, (_, row) in enumerate(edited_df.iterrows()):
-                st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
-                st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
+                orig_row = st.session_state.pulltag_editor_df[(job, lot)].iloc[i]
+                if row["kitted_qty"] != orig_row["kitted_qty"] or row["note"] != orig_row["note"]:
+                    st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
+                    st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
+                    changes_made = True
+            
+            # Clear scan buffer if anything changed
+            if changes_made and st.session_state.scan_buffer:
+                st.session_state.scan_buffer.clear()
+                st.info("Scan buffer reset due to kitted quantity or note changes. Please re-validate scans.")
+
 
     # ─── Finalize 
 
-    if st.button("✅ Finalize Kitting"):
-        finalise()
+    if not st.session_state.locked:
+        st.warning("🔒 Lock quantities before finalizing.")
+    else:
+        if st.button("✅ Finalize Kitting"):
+            finalise()
+
