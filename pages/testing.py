@@ -157,7 +157,7 @@ def get_pulltag_rows(job: str, lot: str) -> list[dict]:
                 lot_number,
                 item_code,
                 description,
-                qty_req,
+                quantity AS qty_req,
                 uom,
                 cost_code,
                 status,
