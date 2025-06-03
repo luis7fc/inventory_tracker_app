@@ -69,8 +69,8 @@ def validate_input(job, lot):
     if not (job and lot):
         st.error("Job Number and Lot Number cannot be empty.")
         return False
-    if not (job.isalnum() and lot.isalnum()):
-        st.error("Job Number and Lot Number must be alphanumeric.")
+    if not (re.match(r'^[A-Za-z0-9\\-]+$', job) and re.match(r'^[A-Za-z0-9\\-]+$', lot)):
+        st.error("Job Number and Lot Number must be alphanumeric (dashes allowed).")
         return False
     return True
 
