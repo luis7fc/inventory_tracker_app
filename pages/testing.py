@@ -189,7 +189,7 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
         scan_set = {r[0] for r in cur.fetchall()}
     df["scan_required"] = df["item_code"].isin(scan_set)
     df["kitted_qty"] = df["qty_req"]
-    df["notes"].fillna("", inplace=True)
+    df["note"].fillna("", inplace=True)
     df["warehouse"].fillna("MAIN", inplace=True)
     return df
 
@@ -234,8 +234,8 @@ def finalise():
                 summaries.append({"job_number": job, "lot_number": lot, "item_code": ic,
                                    "item_description": r.get("description", ""), "scan_id": None, "qty": qty_abs})
             upd.append(("kitted" if tx_type == "Job Issue" else "returned", job, lot, ic))
-            if r["notes"]:
-                note_upd.append((r["notes"], job, lot, ic))
+            if r["note"]:
+                note_upd.append((r["note"], job, lot, ic))
 
     # 3️⃣ commit
     try:
@@ -252,7 +252,7 @@ def finalise():
             if upd:
                 cur.executemany("""UPDATE pulltags SET status=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", upd)
             if note_upd:
-                cur.executemany("""UPDATE pulltags SET notes=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", note_upd)
+                cur.executemany("""UPDATE pulltags SET note=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", note_upd)
             if dels:
                 cur.executemany("""DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s""", dels)
             cur.connection.commit()
@@ -302,19 +302,19 @@ def run():
     for (job, lot), df in st.session_state.pulltag_editor_df.items():
         st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
         edited_df = st.data_editor(
-            df[["item_code", "description", "qty_req", "kitted_qty", "notes"]],
+            df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
             key=f"{EDIT_ANCHOR}_{job}_{lot}",
             num_rows="dynamic",
             use_container_width=True,
             column_config={
                 "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
-                "notes": st.column_config.TextColumn("Notes"),
+                "note": st.column_config.TextColumn("Notes"),
             }
         )
         # Update session copy
         for i, (_, row) in enumerate(edited_df.iterrows()):
             st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
-            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["notes"] = row["notes"]
+            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
 
     # ─── Finalize 
 
