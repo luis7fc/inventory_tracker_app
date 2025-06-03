@@ -75,6 +75,13 @@ def validate_input(job, lot):
         return False
     return True
 
+def validate_location(location):
+    if not location or not re.match(r'^[A-Za-z0-9\\-]+$', location):
+        st.error("Invalid staging location. Must be alphanumeric (dashes allowed).")
+        return False
+    return True
+
+
 def initialize_session_state():
     defaults = {
         'session_id': str(uuid.uuid4()),
@@ -82,7 +89,8 @@ def initialize_session_state():
         'pulltag_editor_df': {},
         'location': '',
         'scan_buffer': [],
-        'user': 'unknown'
+        'user': 'unknown',
+        'confirm_kitting': False
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -223,6 +231,8 @@ def run():
     initialize_session_state()
     st.title("📦 Multi-Lot Job Kitting")
     st.session_state.location = st.text_input("Staging Location", value=st.session_state.location, key="kitting_location")
+    if not validate_location(st.session_state.location):
+        return
 
     with st.form("add_joblot", clear_on_submit=True):
         job = st.text_input("Job Number")
@@ -231,6 +241,7 @@ def run():
             if validate_input(job.strip(), lot.strip()):
                 pair = (job.strip(), lot.strip())
                 if pair not in st.session_state.job_lot_queue:
+                    st.session_state.confirm_kitting = False
                     st.session_state.job_lot_queue.append(pair)
 
     for job, lot in st.session_state.job_lot_queue:
@@ -283,7 +294,16 @@ def run():
                         else:
                             for sid in to_add:
                                 st.session_state.scan_buffer.append((job, lot, item_code, sid))
-                            st.success(f"Added {len(to_add)} new scans for {item_code}")
+                                logger.info(f"Added scan ID {sid} for {job}-{lot}, item {item_code}")
+
+                    if st.session_state.scan_buffer:
+                        st.write("### Current Scan Buffer")
+                        for idx, (j, l, ic, sid) in enumerate(st.session_state.scan_buffer):
+                            if j == job and l == lot:
+                                st.write(f"{sid} (item: {ic})")
+                                if st.button(f"Remove {sid}", key=f"remove_{sid}_{idx}"):
+                                    st.session_state.scan_buffer.remove((j, l, ic, sid))
+                                    st.success(f"Removed scan {sid}")
 
     if st.session_state.job_lot_queue:
         if st.button("✅ Finalize All Kitting"):
@@ -293,6 +313,8 @@ def run():
             if st.button("Confirm Finalization"):
                 finalize_all()
                 st.session_state.confirm_kitting = False
+                st.success("✅ All transactions and scans finalized successfully.")
+
     else:
         st.warning("No jobs/lots to finalize.")
 
