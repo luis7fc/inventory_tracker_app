@@ -163,7 +163,7 @@ def get_pulltag_rows(job: str, lot: str) -> list[dict]:
                 status,
                 transaction_type,
                 last_updated,
-                notes
+                note
             FROM pulltags
             WHERE job_number = %s AND lot_number = %s
         """, (job, lot))
