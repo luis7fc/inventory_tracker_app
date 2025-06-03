@@ -21,7 +21,6 @@ import logging
 import uuid
 from psycopg2 import OperationalError, IntegrityError
 from db import (
-    get_pulltag_rows,
     get_db_cursor,
 )
 
@@ -147,6 +146,27 @@ def bootstrap_state():
     }
     for k, v in base.items():
         st.session_state.setdefault(k, v)
+# ----Load PT rows
+def get_pulltag_rows(job: str, lot: str) -> list[dict]:
+    with get_db_cursor() as cur:
+        cur.execute("""
+            SELECT 
+                pulltag_id,
+                job_number,
+                lot_number,
+                item_code,
+                qty_req,
+                transaction_type,
+                status,
+                last_updated,
+                notes,
+                warehouse
+            FROM pulltags
+            WHERE job_number = %s AND lot_number = %s
+        """, (job, lot))
+        rows = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
+        return [dict(zip(columns, row)) for row in rows]
 
 # ─── Data fetch 
 def load_pulltags(job: str, lot: str) -> pd.DataFrame:
@@ -159,7 +179,7 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
         st.warning(f"❌ {job}-{lot} was already exported. Kitting not allowed.")
         return pd.DataFrame()
     if (df["status"] == "kitted").any():
-        st.warning(f"⚠️ Auto‑kitted on {df['last_updated'].max():%Y‑%m‑%d %H:%M}")
+        st.warning(f"⚠️ Auto‑kitted on {pd.to_datetime(df['last_updated']).max():%Y‑%m‑%d %H:%M}")
     df = df[df["transaction_type"].isin(["Job Issue", "Return"])]
     with get_db_cursor() as cur:
         cur.execute("SELECT item_code FROM items_master WHERE scan_required")
