@@ -298,23 +298,30 @@ def run():
             st.table(pd.DataFrame(st.session_state.scan_buffer, columns=["Job", "Lot", "Item", "Scan ID"]))
 
     # ─── Pull‑Tag Editors 
-
-    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+    for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
         st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
-        edited_df = st.data_editor(
-            df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
-            key=f"{EDIT_ANCHOR}_{job}_{lot}",
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
-                "note": st.column_config.TextColumn("Notes"),
-            }
-        )
-        # Update session copy
-        for i, (_, row) in enumerate(edited_df.iterrows()):
-            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
-            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
+    
+        col1, col2 = st.columns([6, 1])
+        with col2:
+            if st.button(f"❌ Remove `{job}-{lot}`", key=f"remove_{job}_{lot}"):
+                del st.session_state.pulltag_editor_df[(job, lot)]
+                continue
+    
+        with col1:
+            edited_df = st.data_editor(
+                df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
+                key=f"{EDIT_ANCHOR}_{job}_{lot}",
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
+                    "note": st.column_config.TextColumn("Notes"),
+                }
+            )
+            # Update session copy
+            for i, (_, row) in enumerate(edited_df.iterrows()):
+                st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
+                st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
 
     # ─── Finalize 
 
