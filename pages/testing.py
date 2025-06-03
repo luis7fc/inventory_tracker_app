@@ -151,16 +151,19 @@ def get_pulltag_rows(job: str, lot: str) -> list[dict]:
     with get_db_cursor() as cur:
         cur.execute("""
             SELECT 
-                pulltag_id,
+                id AS pulltag_id,
+                warehouse,
                 job_number,
                 lot_number,
                 item_code,
+                description,
                 qty_req,
-                transaction_type,
+                uom,
+                cost_code,
                 status,
+                transaction_type,
                 last_updated,
-                notes,
-                warehouse
+                notes
             FROM pulltags
             WHERE job_number = %s AND lot_number = %s
         """, (job, lot))
