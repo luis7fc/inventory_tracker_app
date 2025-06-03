@@ -171,13 +171,23 @@ def finalize_all():
                     progress_bar.progress(current_step / total_steps)
 
             if transaction_data:
-                cur.executemany("""
-                    INSERT INTO transactions (
-                        transaction_type, date, warehouse, from_location,
-                        job_number, lot_number, item_code, quantity, user_id
-                    ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
-                """, [(d[0], d[1], d[2] if d[0] == 'Job Issue' else None, d[2] if d[0] == 'Return' else None, d[3], d[4], d[5], d[6], d[7]) for d in transaction_data])
+                for d in transaction_data:
+                    if d[0] == 'Job Issue':
+                        cur.execute("""
+                            INSERT INTO transactions (
+                                transaction_type, date, warehouse, from_location,
+                                job_number, lot_number, item_code, quantity, user_id
+                            ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
+                        """, d)
+                    else:
+                        cur.execute("""
+                            INSERT INTO transactions (
+                                transaction_type, date, warehouse, to_location,
+                                job_number, lot_number, item_code, quantity, user_id
+                            ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
+                        """, d)
 
+            
             if scan_data:
                 cur.executemany("""
                     INSERT INTO scan_verifications (
@@ -252,7 +262,10 @@ def run():
                 df = df[df['transaction_type'].isin(['Job Issue', 'Return'])].copy()
                 df['kitted_qty'] = df['qty_req']
                 df['notes'] = ""
-                df['scan_required'] = df.get('scan_required', False)
+                with get_db_cursor() as cur:
+                    cur.execute("SELECT item_code FROM items_master WHERE scan_required = TRUE")
+                    scan_required_set = {row[0] for row in cur.fetchall()}
+                df['scan_required'] = df['item_code'].apply(lambda code: code in scan_required_set)
                 df['transaction_type'] = df['transaction_type']
                 df['warehouse'] = df['warehouse'].fillna('MAIN')
                 st.session_state.pulltag_editor_df[(job, lot)] = df
