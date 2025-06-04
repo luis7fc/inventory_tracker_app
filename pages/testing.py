@@ -11,6 +11,7 @@ Refactored Multi‑Lot Job Kitting module  — v3 (2025‑06‑02)
 """
 
 import streamlit as st
+import json
 import pandas as pd
 import re
 from datetime import datetime
@@ -324,7 +325,15 @@ def run():
                 st.session_state.pulltag_editor_df[(job, lot)] = df
 
     # ─── Staging Location ─────────────────────────────────────────────────────
-    st.session_state.location = st.text_input("Staging Location", value=st.session_state.location or "")
+    loc_input = st.text_input("Staging Location", value=st.session_state.location or "")
+    st.session_state.location = loc_input  # always update session state
+    
+    if loc_input:
+        with get_db_cursor() as cur:
+            cur.execute("SELECT 1 FROM locations WHERE location_code = %s", (loc_input,))
+            if not cur.fetchone():
+                st.warning(f"⚠️ Location '{loc_input}' not found in system. Please verify or add it first.")
+
 
     # ─── Lock/Unlock Quantities ─────────────────────────────────────────────────
     lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
@@ -338,7 +347,68 @@ def run():
             for key, df in st.session_state.pulltag_editor_df.items():
                 st.session_state.pulltag_editor_df[key] = df.copy()
             st.success("Quantities locked. Scanning enabled.")
+            
+    #saving session for future reload
+    session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
+    session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
 
+    if st.button("📂 Save Progress"):
+        snapshot = {
+            "pulltag_editor_df": {f"{k[0]}|{k[1]}": df.to_dict() for k, df in st.session_state.pulltag_editor_df.items()},
+            "scan_buffer": st.session_state.scan_buffer,
+            "locked": st.session_state.locked,
+        }
+        with get_db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO kitting_sessions (session_id, user_id, data, label, expires_at)
+                VALUES (%s, %s, %s, %s, NOW() + INTERVAL '48 hours')
+                ON CONFLICT (session_id) DO UPDATE
+                SET data = EXCLUDED.data, label = EXCLUDED.label, saved_at = NOW(), expires_at = EXCLUDED.expires_at
+            """, (
+                st.session_state.session_id,
+                st.session_state.user,
+                json.dumps(snapshot),
+                session_label
+            ))
+        st.success("📂 Progress saved to database.")
+    
+    # Load sessions
+    with get_db_cursor() as cur:
+        cur.execute("""
+            SELECT session_id, label, saved_at
+            FROM kitting_sessions
+            WHERE user_id = %s AND (expires_at IS NULL OR expires_at > NOW())
+            ORDER BY saved_at DESC
+            LIMIT 10
+        """, (st.session_state.user,))
+        sessions = cur.fetchall()
+    
+    if sessions:
+        session_options = {f"{label} ({saved_at[:16]})": sid for sid, label, saved_at in sessions}
+        selected = st.selectbox("📂 Resume or Delete a Saved Session", options=list(session_options.keys()))
+    
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if selected and st.button("🔁 Load Selected Session"):
+                sid = session_options[selected]
+                cur.execute("SELECT data FROM kitting_sessions WHERE session_id = %s", (sid,))
+                row = cur.fetchone()
+                if row:
+                    saved = json.loads(row[0])
+                    st.session_state.pulltag_editor_df = {
+                        tuple(k.split("|")): pd.DataFrame(v)
+                        for k, v in saved["pulltag_editor_df"].items()
+                    }
+                    st.session_state.scan_buffer = saved["scan_buffer"]
+                    st.session_state.locked = saved["locked"]
+                    st.success(f"Session '{selected}' restored.")
+    
+        with col2:
+            if selected and st.button("🗑️ Delete This Session"):
+                sid = session_options[selected]
+                cur.execute("DELETE FROM kitting_sessions WHERE session_id = %s", (sid,))
+                st.success(f"Session '{selected}' deleted.")
+                st.experimental_rerun()
     # ─── Scan Entry ───────────────────────────────────────────────────────────
     if st.session_state.locked:
         with st.expander("🔍 Scan Input"):
