@@ -466,6 +466,7 @@ def run():
         }
         selected = st.selectbox("📂 Resume or Delete a Saved Session", options=list(session_options.keys()))
         col1, col2 = st.columns([1, 1])
+    
         with col1:
             if selected and st.button("🔁 Load Selected Session"):
                 sid = session_options[selected]
@@ -482,14 +483,16 @@ def run():
                     st.session_state.locked = saved["locked"]
                     st.success(f"Session '{selected}' restored.")
                     logger.info(f"Restored session: pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
-
-    with col2:
-        if selected and st.button("🗑️ Delete This Session"):
-            sid = session_options[selected]
-            with get_db_cursor() as cur:
-                cur.execute("DELETE FROM kitting_sessions WHERE session_id = %s", (sid,))
-            st.success(f"Session '{selected}' deleted.")
-            st.rerun()
+    
+        with col2:
+            if selected and st.button("🗑️ Delete This Session"):
+                sid = session_options[selected]
+                with get_db_cursor() as cur:
+                    cur.execute("DELETE FROM kitting_sessions WHERE session_id = %s", (sid,))
+                st.success(f"Session '{selected}' deleted.")
+                st.rerun()
+    else:
+        st.info("No saved sessions found. Save your work to see it here.")
 
     if st.session_state.locked:
         with st.expander("🔍 Scan Input"):
