@@ -411,8 +411,7 @@ def run():
         if submitted:
             st.session_state.locked = not st.session_state.locked
             if not st.session_state.locked:
-                st.session_state.scan_buffer.clear()
-                st.info("Quantities unlocked. Scan buffer cleared.")
+                st.info("Quantities unlocked. If any quantities changed, please revalidate scans before finalizing.")
                 logger.info(f"Unlocked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
             else:
                 if submitted:
