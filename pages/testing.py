@@ -241,41 +241,51 @@ def finalise():
         if not bad.empty:
             st.error("Negative qty only allowed on Return lines.")
             return
+
     summaries, tx, scans, inv, upd, dels, note_upd, qty_upd = [], [], [], [], [], [], [], []
     sb = st.session_state.scan_buffer
     missing_notes = []
     for (job, lot), df in st.session_state.pulltag_editor_df.items():
         for _, row in df.iterrows():
-            if row["kitted_qty"] != row["qty_req"] and not row["note"]:
-                missing_notes.append(f"{job}-{lot}-{row['item_code']}")
+            if row["kitted_qty"] != row["qty_req"] and (not row["note"] or row["note"].strip().lower() == "imported"):
+                missing_notes.append(f"{job}-{lot}-{row['item_code']}"
     if missing_notes:
         logger.warning(f"Blocked finalization due to missing notes: {missing_notes}")
         st.warning(f"📝 Notes required for items with changed quantity: {', '.join(missing_notes)}")
         return
     try:
         with get_db_cursor() as cur, cur.connection:
+            item_scan_map = defaultdict(list)
+            for j, l, ic, sid in sb:
+                item_scan_map[(j, ic)].append(sid)
+            distributed_scans = defaultdict(list)
+            for (job, item_code), scans_for_item in item_scan_map.items():
+                total_needed = 0
+                for (lot_k, df_k) in st.session_state.pulltag_editor_df.items():
+                    if lot_k[0] == job and item_code in df_k["item_code"].values:
+                        total_needed += int(df_k[df_k["item_code"] == item_code]["kitted_qty"].iloc[0])
+                if len(set(scans_for_item)) != abs(total_needed):
+                    raise ScanMismatchError(f"{job}-{item_code}: need {abs(total_needed)} scans, got {len(set(scans_for_item))}.")
+                scan_queue = list(dict.fromkeys(scans_for_item))
+                for (lot_k, df_k) in st.session_state.pulltag_editor_df.items():
+                    if lot_k[0] != job:
+                        continue
+                    for idx, row in df_k[df_k["item_code"] == item_code].iterrows():
+                        qty = int(row["kitted_qty"])
+                        assigned = scan_queue[:abs(qty)]
+                        distributed_scans[(lot_k[0], lot_k[1], item_code)] = assigned
+                        scan_queue = scan_queue[abs(qty):]
             for (job, lot), df in st.session_state.pulltag_editor_df.items():
-                buf = {(j, l, ic): [] for j, l, ic, _ in sb}
-                for j, l, ic, sid in sb:
-                    buf[(j, l, ic)].append(sid)
                 for _, r in df.iterrows():
                     ic, qty, tx_type = r["item_code"], int(r["kitted_qty"]), r["transaction_type"]
                     wh, loc = r["warehouse"], st.session_state.location
-                    if qty == 0:
-                        note_upd.append((r["note"], job, lot, ic))
-                        qty_upd.append((qty, job, lot, ic))
-                        upd.append(("adjusted", job, lot, ic))
-                        continue
-                    sc = buf.get((job, lot, ic), [])
-                    if r["scan_required"] and len(set(sc)) != abs(qty):
-                        raise ScanMismatchError(f"{job}-{lot}-{ic}: need {abs(qty)} scans, got {len(set(sc))}.")
+                    scan_required = r.get("scan_required", False)
+                    sc = distributed_scans.get((job, lot, ic), [])
                     qty_abs = abs(qty)
-                    if tx_type == "Job Issue":
+                    if scan_required:
                         tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
-                        inv.append((ic, loc, -qty_abs, wh))
-                    else:
-                        tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
-                        inv.append((ic, loc, qty_abs, wh))
+                        inv_delta = -qty_abs if tx_type == "Job Issue" else qty_abs
+                        inv.append((ic, loc, inv_delta, wh))
                     for sid in sc:
                         validate_scan_location(cur, sid, tx_type, expected_location=loc, expected_item_code=ic)
                         scans.append((ic, sid, job, lot, loc, tx_type, wh, st.session_state.user))
@@ -292,30 +302,56 @@ def finalise():
                     if r["note"]:
                         note_upd.append((r["note"], job, lot, ic))
                         qty_upd.append((qty, job, lot, ic))
-            for d in tx:
-                if d[0] == "Job Issue":
-                    cur.execute("""INSERT INTO transactions (transaction_type, date, warehouse, from_location, job_number, lot_number, item_code, quantity, user_id) VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)""", d)
-                else:
-                    cur.execute("""INSERT INTO transactions (transaction_type, date, warehouse, to_location, job_number, lot_number, item_code, quantity, user_id) VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)""", d)
+            if tx:
+                for d in tx:
+                    if d[0] == "Job Issue":
+                        cur.execute("""
+                            INSERT INTO transactions (transaction_type, date, warehouse, from_location, job_number, lot_number, item_code, quantity, user_id)
+                            VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)
+                        """, d)
+                    else:
+                        cur.execute("""
+                            INSERT INTO transactions (transaction_type, date, warehouse, to_location, job_number, lot_number, item_code, quantity, user_id)
+                            VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)
+                        """, d)
             if scans:
-                cur.executemany("""INSERT INTO scan_verifications (item_code, scan_id, job_number, lot_number, scan_time, location, transaction_type, warehouse, scanned_by) VALUES (%s,%s,%s,%s,NOW(),%s,%s,%s,%s)""", scans)
+                cur.executemany("""
+                    INSERT INTO scan_verifications (item_code, scan_id, job_number, lot_number, scan_time, location, transaction_type, warehouse, scanned_by)
+                    VALUES (%s,%s,%s,%s,NOW(),%s,%s,%s,%s)
+                """, scans)
             if inv:
-                cur.executemany("""INSERT INTO current_inventory (item_code, location, quantity, warehouse) VALUES (%s,%s,%s,%s) ON CONFLICT (item_code, location, warehouse) DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity""", inv)
+                cur.executemany("""
+                    INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s,%s,%s,%s)
+                    ON CONFLICT (item_code, location, warehouse)
+                    DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity
+                """, inv)
             if upd:
-                cur.executemany("""UPDATE pulltags SET status=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", upd)
+                cur.executemany("""
+                    UPDATE pulltags SET status=%s, last_updated=NOW()
+                    WHERE job_number=%s AND lot_number=%s AND item_code=%s
+                """, upd)
             if note_upd:
-                cur.executemany("""UPDATE pulltags SET note=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", note_upd)
+                cur.executemany("""
+                    UPDATE pulltags SET note=%s, last_updated=NOW()
+                    WHERE job_number=%s AND lot_number=%s AND item_code=%s
+                """, note_upd)
             if qty_upd:
-                cur.executemany("""UPDATE pulltags SET quantity = %s, last_updated = NOW() WHERE job_number = %s AND lot_number = %s AND item_code = %s""", qty_upd)
+                cur.executemany("""
+                    UPDATE pulltags SET quantity = %s, last_updated = NOW()
+                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                """, qty_upd)
             if dels:
-                cur.executemany("""DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s""", dels)
+                cur.executemany("""
+                    DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s
+                """, dels)
             cur.connection.commit()
     except Exception as e:
         st.error("❌ Finalization failed. Please check your scan counts, lot state, or try again. Error logged.")
         logger.exception("Finalisation failed")
         return
     pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
-                                        datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
+        datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
     st.download_button("📄 Download Final Scan Summary", pdf, file_name="final_scan_summary.pdf", mime="application/pdf")
     finalized_lots = list(st.session_state.pulltag_editor_df.keys())
     logger.info(f"Finalized and archived: {finalized_lots}")
