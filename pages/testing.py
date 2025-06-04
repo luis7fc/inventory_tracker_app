@@ -427,7 +427,12 @@ def run():
     compute_scan_requirements()
     if st.button("📂 Save Progress"):
         snapshot = {
-            "pulltag_editor_df": {f"{k[0]}|{k[1]}": df.to_dict() for k, df in st.session_state.pulltag_editor_df.items()},
+            "pulltag_editor_df": {
+                f"{k[0]}|{k[1]}": df.copy().astype(object).applymap(
+                    lambda v: v.isoformat() if isinstance(v, (datetime, pd.Timestamp)) else v
+                ).to_dict()
+                for k, df in st.session_state.pulltag_editor_df.items()
+            },
             "scan_buffer": st.session_state.scan_buffer,
             "locked": st.session_state.locked,
         }
