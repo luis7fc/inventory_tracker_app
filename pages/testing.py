@@ -433,6 +433,11 @@ def run():
                 submitted = st.form_submit_button("📂 Apply Changes")
                 if submitted:
                     st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
+                    # Restore hidden system fields
+                    original = st.session_state.pulltag_editor_df.get((job, lot))
+                    if original is not None and "scan_required" in original.columns:
+                        st.session_state.pulltag_editor_df[(job, lot)]["scan_required"] = original["scan_required"]
+
                     compute_scan_requirements()
                     st.success(f"Changes for `{job}-{lot}` saved.")
                     logger.info(f"[REPLACED DF] {job}-{lot}: {edited_df[['item_code', 'kitted_qty']].to_dict()}")
