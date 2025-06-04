@@ -169,7 +169,8 @@ def generate_finalize_summary_pdf(rows, user, ts):
             pdf.cell(w, 6, v, 1)
         pdf.ln()
     buf = BytesIO()
-    pdf.output(buf)
+    pdf_bytes = pdf.output(dest="S").encode("latin1")
+    buf.write(pdf_bytes)
     buf.seek(0)
     return buf
 
