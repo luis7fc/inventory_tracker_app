@@ -77,7 +77,12 @@ def validate_alphanum(v: str, field: str) -> bool:
         return False
     return True
 
+
 def compute_scan_requirements():
+    logger.info("[compute_scan_requirements] START")
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        logger.info(f"[CSR] {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
+
     if not st.session_state.pulltag_editor_df:
         st.session_state.item_requirements = {}
         st.session_state.item_meta = {}
@@ -110,8 +115,7 @@ def render_scan_inputs():
     st.markdown("## 🧪 Item Scans Required")
     sync_editor_edits()
     compute_scan_requirements()
-    logger.info(f"[render_scan_inputs] Recomputed scan requirements: {st.session_state.get('item_requirements', {})}")
-
+    logger.info(f"[render_scan_inputs] FINAL item_requirements: {st.session_state.get('item_requirements', {})}")
     if not st.session_state.pulltag_editor_df:
         st.info("Load pulltags to begin scanning.")
         return
@@ -349,8 +353,11 @@ def run():
                 st.info("Quantities unlocked. Scan buffer cleared.")
                 logger.info(f"Unlocked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
             else:
-                sync_editor_edits()
-                compute_scan_requirements()
+                if submitted:
+                    sync_editor_edits()
+                    compute_scan_requirements()
+                    logger.info(f"[FORM SUBMIT] Applied for {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
+
                 st.success("Quantities locked. Scanning enabled.")
                 logger.info(f"Locked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
     session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
