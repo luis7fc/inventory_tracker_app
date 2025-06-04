@@ -232,7 +232,7 @@ def finalise():
         if not bad.empty:
             st.error("Negative qty only allowed on Return lines.")
             return
-    summaries, tx, scans, inv, upd, dels, note_upd, qty_upd = [], [], [], [], [], [], []
+    summaries, tx, scans, inv, upd, dels, note_upd, qty_upd = [], [], [], [], [], [], [], []
     sb = st.session_state.scan_buffer
     missing_notes = []
     for (job, lot), df in st.session_state.pulltag_editor_df.items():
