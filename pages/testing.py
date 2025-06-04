@@ -94,33 +94,49 @@ def render_scan_inputs():
     st.markdown("## 🧪 Item Scans Required")
     compute_scan_requirements()
     logger.info(f"[render_scan_inputs] FINAL item_requirements: {st.session_state.get('item_requirements', {})}")
+
     if not st.session_state.pulltag_editor_df:
         st.info("Load pulltags to begin scanning.")
         return
+
     item_requirements = st.session_state.get("item_requirements", {})
     item_meta = st.session_state.get("item_meta", {})
     new_scan_map = {}
+
     for item_code, qty_needed in item_requirements.items():
         label = f"🔍 Scan for `{item_code}` ({item_meta[item_code]['description']}) — Need {qty_needed} unique scans"
         input_key = f"scan_input_{item_code}"
         raw = st.text_area(label, key=input_key, help="Enter one scan ID per line or comma-separated")
         scan_list = list(filter(None, re.split(r"[\s,]+", raw.strip())))
         new_scan_map[item_code] = scan_list
+
     if st.button("✅ Validate Scans"):
         st.session_state.scan_buffer.clear()
         errors = []
-        for item_code, expected_qty in item_requirements.items():
-            scans = new_scan_map[item_code]
-            unique_scans = list(dict.fromkeys(scans))
-            if len(unique_scans) != expected_qty:
-                errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
-            for sid in unique_scans:
-                for (job, lot), df in st.session_state.pulltag_editor_df.items():
-                    if item_code in df["item_code"].values:
-                        st.session_state.scan_buffer.append((job, lot, item_code, sid))
-                        break
+
+        with get_db_cursor() as cur:
+            for item_code, expected_qty in item_requirements.items():
+                scans = new_scan_map[item_code]
+                unique_scans = list(dict.fromkeys(scans))
+                if len(unique_scans) != expected_qty:
+                    errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
+                for sid in unique_scans:
+                    matched = False
+                    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                        if item_code in df["item_code"].values:
+                            tx_type = df[df["item_code"] == item_code]["transaction_type"].iloc[0]
+                            try:
+                                validate_scan_location(cur, sid, tx_type, expected_location=st.session_state.location, expected_item_code=item_code)
+                                st.session_state.scan_buffer.append((job, lot, item_code, sid))
+                            except Exception as e:
+                                errors.append(f"{item_code} ({sid}): {str(e)}")
+                            matched = True
+                            break
+                    if not matched:
+                        errors.append(f"{item_code} ({sid}): No matching pulltag found.")
+
         if errors:
-            st.error("❌ Scan mismatch:\n" + "\n".join(errors))
+            st.error("❌ Scan validation errors:\n" + "\n".join(errors))
         else:
             st.success("✅ All scans validated and assigned.")
 
