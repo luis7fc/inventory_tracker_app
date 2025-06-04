@@ -448,8 +448,11 @@ def run():
                 if submitted:
                     original = st.session_state.pulltag_editor_df.get((job, lot))
                     st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
-                    if original is not None and "scan_required" in original.columns:
-                        st.session_state.pulltag_editor_df[(job, lot)]["scan_required"] = original["scan_required"]
+                    if original is not None:
+                        for col in ["scan_required", "transaction_type", "warehouse", "qty_req"]:
+                            if col in original.columns:
+                                st.session_state.pulltag_editor_df[(job, lot)][col] = original[col]
+                    
 
                     compute_scan_requirements()
                     st.success(f"Changes for `{job}-{lot}` saved.")
