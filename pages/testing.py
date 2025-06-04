@@ -470,44 +470,36 @@ def run():
         st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
     
         col1, col2 = st.columns([6, 1])
+    
+        with col1:
+            form_key = f"{EDIT_ANCHOR}_form_{job}_{lot}"
+            with st.form(form_key):
+                editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
+                edited_df = st.data_editor(
+                    df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
+                    key=editor_key,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    disabled=st.session_state.locked,
+                    column_config={
+                        "item_code": st.column_config.TextColumn("Item Code", disabled=True),
+                        "description": st.column_config.TextColumn("Description", disabled=True),
+                        "qty_req": st.column_config.NumberColumn("Qty Required", disabled=True),
+                        "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
+                        "note": st.column_config.TextColumn("Notes"),
+                    }
+                )
+                submitted = st.form_submit_button("📂 Apply Changes")
+                if submitted:
+                    sync_editor_edits()
+                    compute_scan_requirements()
+                    st.success(f"Changes for `{job}-{lot}` saved.")
+    
         with col2:
             if st.button(f"❌ Remove `{job}-{lot}`", key=f"remove_{job}_{lot}"):
                 del st.session_state.pulltag_editor_df[(job, lot)]
-                continue
-    
-        with col1:
-            edited_df = st.data_editor(
-                df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
-                key=f"{EDIT_ANCHOR}_{job}_{lot}",
-                num_rows="dynamic",
-                use_container_width=True,
-                disabled=st.session_state.locked,
-                column_config={
-                    "item_code": st.column_config.TextColumn("Item Code", disabled=True),
-                    "description": st.column_config.TextColumn("Description", disabled=True),
-                    "qty_req": st.column_config.NumberColumn("Qty Required", disabled=True),
-                    "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
-                    "note": st.column_config.TextColumn("Notes"),
-                }
-            )
-                        
-            # Update session copy + detect changes
-            changes_made = False
-            for i, (_, row) in enumerate(edited_df.iterrows()):
-                orig_row = st.session_state.pulltag_editor_df[(job, lot)].iloc[i]
-                if row["kitted_qty"] != orig_row["kitted_qty"] or row["note"] != orig_row["note"]:
-                    st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
-                    st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
-                    changes_made = True
-
-            if changes_made:
-                compute_scan_requirements()
-                if st.session_state.scan_buffer:
-                    st.session_state.scan_buffer.clear()
-                    st.info("Scan buffer reset due to kitted quantity or note changes. Please re-validate scans.")
 
     # ─── Finalize 
-
     if not st.session_state.locked:
         st.warning("🔒 Lock quantities before finalizing.")
     else:
