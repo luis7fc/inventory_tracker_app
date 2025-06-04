@@ -21,7 +21,7 @@ def user_error(msg: str):
     st.error(f"❌ {msg}")
     st.stop()
     
-#confirming scan location is sound    
+# ─── Scan Location Validator ────────────────────────────────────────────────
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None):
     cur.execute("SELECT location FROM current_scan_location WHERE scan_id = %s", (scan_id,))
     row = cur.fetchone()
@@ -34,7 +34,7 @@ def validate_scan_location(cur, scan_id, trans_type, expected_location=None):
         raise Exception(f"Scan {scan_id} is already assigned to location {row[0]}. Cannot return again.")
     elif trans_type not in ("Job Issue", "Return"):
         raise ValueError(f"Unsupported transaction type: {trans_type}")
-
+#Generate summary PDF
 def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=None):
 
     output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
@@ -90,6 +90,7 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
             parts = k.split("_")
             if len(parts) >= 3:
                 scans_by_item.setdefault(parts[2], []).append(sid.strip())
+        validate_scan_location(cur, sid, tx_type, expected_location=st.session_state.location if tx_type == "Job Issue" else None)
 
         for item_code, lots in scans_needed.items():
             scan_list = scans_by_item.get(item_code, [])
