@@ -379,15 +379,18 @@ def run():
 
     # ─── Lock/Unlock Quantities ─────────────────────────────────────────────────
     lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
-    if st.button(lock_btn_text):
-        st.session_state.locked = not st.session_state.locked
-        if not st.session_state.locked:
-            st.session_state.scan_buffer.clear()
-            st.info("Quantities unlocked. Scan buffer cleared.")
-        else:
-            sync_editor_edits()
-            compute_scan_requirements()
-            st.success("Quantities locked. Scanning enabled.")
+    with st.form("lock_quantities_form"):
+        submitted = st.form_submit_button(lock_btn_text)
+        if submitted:
+            st.session_state.locked = not st.session_state.locked
+            if not st.session_state.locked:
+                st.session_state.scan_buffer.clear()
+                st.info("Quantities unlocked. Scan buffer cleared.")
+            else:
+                sync_editor_edits()
+                compute_scan_requirements()
+                st.success("Quantities locked. Scanning enabled.")
+
             
     #saving session for future reload
     session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
