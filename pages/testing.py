@@ -368,13 +368,13 @@ def run():
                 st.warning(f"⚠️ Location '{loc_input}' not found in system. Please verify or add it first.")
 
     # ─── Lock/Unlock Quantities ─────────────────────────────────────────────────
+    lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
     if st.button(lock_btn_text):
         st.session_state.locked = not st.session_state.locked
         if not st.session_state.locked:
             st.session_state.scan_buffer.clear()
             st.info("Quantities unlocked. Scan buffer cleared.")
         else:
-            # 🔄 Extract final edits from st.data_editor UI buffers
             for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
                 editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
                 if editor_key in st.session_state:
@@ -383,9 +383,9 @@ def run():
                         for i, (_, row) in enumerate(editor_df.iterrows()):
                             df.at[i, "kitted_qty"] = row["kitted_qty"]
                             df.at[i, "note"] = row["note"]
-            compute_scan_requirements()  # 🔁 recalculate after locking
+            compute_scan_requirements()
             st.success("Quantities locked. Scanning enabled.")
-
+            
     #saving session for future reload
     session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
     session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
