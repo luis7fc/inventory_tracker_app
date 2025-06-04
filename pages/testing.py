@@ -356,7 +356,9 @@ def run():
                 if submitted:
                     sync_editor_edits()
                     compute_scan_requirements()
-                    logger.info(f"[FORM SUBMIT] Applied for {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
+                    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                        logger.info(f"[FORM SUBMIT] Applied for {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
+                    
 
                 st.success("Quantities locked. Scanning enabled.")
                 logger.info(f"Locked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
