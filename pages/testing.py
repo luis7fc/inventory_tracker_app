@@ -207,7 +207,6 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
         st.warning(f"No pull‑tags for {job}-{lot}")
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    logger.info(f"Loaded pulltags for {job}-{lot}: {df[['item_code', 'kitted_qty', 'qty_req', 'transaction_type', 'scan_required']].to_dict()}")
     if (df["status"] == "exported").any():
         st.warning(f"❌ {job}-{lot} was already exported. Kitting not allowed.")
         return pd.DataFrame()
@@ -222,6 +221,7 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
         df["kitted_qty"] = df["qty_req"]
     df["note"].fillna("", inplace=True)
     df["warehouse"].fillna("MAIN", inplace=True)
+    logger.info(f"Loaded pulltags for {job}-{lot}: {df[['item_code', 'kitted_qty', 'qty_req', 'transaction_type', 'scan_required']].to_dict()}")
     return df
 
 def finalise():
