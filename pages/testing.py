@@ -473,7 +473,7 @@ def run():
                     cur.execute("SELECT data FROM kitting_sessions WHERE session_id = %s", (sid,))
                     row = cur.fetchone()
                 if row:
-                    saved = json.loads(row[0])
+                    saved = row[0]
                     st.session_state.pulltag_editor_df = {
                         tuple(k.split("|")): pd.DataFrame(v)
                         for k, v in saved["pulltag_editor_df"].items()
