@@ -42,6 +42,16 @@ class DuplicateScanError(Exception):
     """Same scan‑ID used twice."""
 
 # ─── Helpers 
+def sync_editor_edits():
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
+        if editor_key in st.session_state:
+            ui_df = st.session_state[editor_key]
+            if isinstance(ui_df, pd.DataFrame):
+                for i in range(min(len(df), len(ui_df))):
+                    df.at[i, "kitted_qty"] = ui_df.at[i, "kitted_qty"]
+                    df.at[i, "note"] = ui_df.at[i, "note"]
+
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
     cur.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
     row = cur.fetchone()
@@ -375,14 +385,7 @@ def run():
             st.session_state.scan_buffer.clear()
             st.info("Quantities unlocked. Scan buffer cleared.")
         else:
-            for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
-                editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
-                if editor_key in st.session_state:
-                    editor_df = st.session_state[editor_key]
-                    if isinstance(editor_df, pd.DataFrame):
-                        for i, (_, row) in enumerate(editor_df.iterrows()):
-                            df.at[i, "kitted_qty"] = row["kitted_qty"]
-                            df.at[i, "note"] = row["note"]
+            sync_editor_edits()
             compute_scan_requirements()
             st.success("Quantities locked. Scanning enabled.")
             
