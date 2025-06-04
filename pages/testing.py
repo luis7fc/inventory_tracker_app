@@ -21,6 +21,7 @@ from io import BytesIO
 import logging
 import uuid
 from psycopg2 import OperationalError, IntegrityError
+from collections import defaultdict
 from db import (
     get_db_cursor,
 )
@@ -28,7 +29,6 @@ from db import (
 # ─── Logging 
 logging.basicConfig(level=logging.INFO, filename="kitting_app.log")
 logger = logging.getLogger(__name__)
-
 EDIT_ANCHOR = "scan-edit"
 
 # ─── Exceptions 
@@ -49,13 +49,44 @@ def get_timezone():
     except ZoneInfoNotFoundError:
         return ZoneInfo("UTC")
 
-
 def validate_alphanum(v: str, field: str) -> bool:
     if not re.match(r"^[A-Za-z0-9\-]+$", v):
         st.error(f"{field} must be alphanumeric (dashes allowed).")
         return False
     return True
 
+def compute_scan_requirements():
+    if not st.session_state.pulltag_editor_df:
+        st.session_state.item_requirements = {}
+        st.session_state.item_meta = {}
+        return
+
+    item_requirements = defaultdict(int)
+    item_meta = {}
+    errors = []
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        for _, row in df.iterrows():
+            if row["scan_required"]:
+                ic = row["item_code"]
+                try:
+                    qty = int(row["kitted_qty"])
+                    item_requirements[ic] += abs(qty)
+                    description = row.get("description", "")
+                    if ic in item_meta and item_meta[ic]["description"] != description:
+                        st.warning(f"Inconsistent description for {ic}: using '{description}'")
+                    item_meta[ic] = {"description": description}
+                except (ValueError, TypeError):
+                    errors.append(f"Invalid kitted quantity for item {ic} in {job}-{lot}")
+
+    if errors:
+        st.error("❌ Scan requirement errors:\n" + "\n".join(errors))
+        st.session_state.item_requirements = {}
+        st.session_state.item_meta = {}
+    else:
+        st.session_state.item_requirements = item_requirements
+        st.session_state.item_meta = item_meta
+
+ #Method 2
 def render_scan_inputs():
     st.markdown("## 🧪 Item Scans Required")
 
@@ -63,27 +94,37 @@ def render_scan_inputs():
         st.info("Load pulltags to begin scanning.")
         return
 
-    # 1. Group required scan counts per item_code
-    from collections import defaultdict
+    item_requirements = st.session_state.get("item_requirements", {})
+    item_meta = st.session_state.get("item_meta", {})
 
-    item_requirements = defaultdict(int)
-    item_meta = {}
+    new_scan_map = {}
+    for item_code, qty_needed in item_requirements.items():
+        label = f"🔍 Scan for `{item_code}` ({item_meta[item_code]['description']}) — Need {qty_needed} unique scans"
+        input_key = f"scan_input_{item_code}"
+        raw = st.text_area(label, key=input_key, help="Enter one scan ID per line or comma-separated")
+        scan_list = list(filter(None, re.split(r"[\s,]+", raw.strip())))
+        new_scan_map[item_code] = scan_list
 
-    for (job, lot), df in st.session_state.pulltag_editor_df.items():
-        for _, row in df.iterrows():
-            if row["scan_required"]:
-                ic = row["item_code"]
-                try:
-                    qty = int(row["kitted_qty"])
-                    if row["scan_required"]:
-                        item_requirements[ic] += abs(qty)
-                        item_meta[ic] = {"description": row.get("description", "")}
-                except (ValueError, TypeError):
-                    st.error(f"Invalid kitted quantity for item {row['item_code']}")
-                item_meta[ic] = {
-                    "description": row.get("description", ""),
-                }
+    if st.button("✅ Validate Scans"):
+        st.session_state.scan_buffer.clear()
+        errors = []
+        for item_code, expected_qty in item_requirements.items():
+            scans = new_scan_map[item_code]
+            unique_scans = list(dict.fromkeys(scans))
+            if len(unique_scans) != expected_qty:
+                errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
+            for sid in unique_scans:
+                for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                    if item_code in df["item_code"].values:
+                        st.session_state.scan_buffer.append((job, lot, item_code, sid))
+                        break
 
+        if errors:
+            st.error("❌ Scan mismatch:\n" + "\n".join(errors))
+        else:
+            st.success("✅ All scans validated and assigned.")
+
+    
     # 2. Initialize input fields per item_code
     new_scan_map = {}
     for item_code, qty_needed in item_requirements.items():
@@ -114,7 +155,6 @@ def render_scan_inputs():
         else:
             st.success("✅ All scans validated and assigned.")
 
-
 def generate_finalize_summary_pdf(rows, user, ts):
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -140,7 +180,6 @@ def generate_finalize_summary_pdf(rows, user, ts):
     buf.seek(0)
     return buf
 
-
 def bootstrap_state():
     base = {
         "session_id": str(uuid.uuid4()),
@@ -154,6 +193,7 @@ def bootstrap_state():
     }
     for k, v in base.items():
         st.session_state.setdefault(k, v)
+        
 # ----Load PT rows
 def get_pulltag_rows(job: str, lot: str) -> list[dict]:
     with get_db_cursor() as cur:
@@ -202,7 +242,6 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
     return df
 
 # ─── Finalise 
-
 def finalise():
     # 1️⃣ validate non‑Return negatives
     for df in st.session_state.pulltag_editor_df.values():
@@ -259,7 +298,6 @@ def finalise():
         st.warning(f"📝 Notes required for items with changed quantity: {', '.join(missing_notes)}")
         return
     
-
     # 3️⃣ commit
     try:
         with get_db_cursor() as cur, cur.connection:
@@ -289,8 +327,7 @@ def finalise():
         st.error("❌ Finalization failed. Please check your scan counts, lot state, or try again. Error logged.")
         logger.exception("Finalisation failed")
         return
-
-
+        
     pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
                                         datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
     st.download_button("📄 Download Final Scan Summary", pdf, file_name="final_scan_summary.pdf", mime="application/pdf")
@@ -301,11 +338,7 @@ def finalise():
     st.session_state.locked = False
     st.success("✅ Finalization complete. All pulltags archived from editor.")
 
-
-
-
 # ─── Main UI ───────────────────────────────────────────────────────────────────
-
 def run():
     bootstrap_state()
     st.title("📦 Multi-Lot Job Kitting")
@@ -334,7 +367,6 @@ def run():
             if not cur.fetchone():
                 st.warning(f"⚠️ Location '{loc_input}' not found in system. Please verify or add it first.")
 
-
     # ─── Lock/Unlock Quantities ─────────────────────────────────────────────────
     lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
     if st.button(lock_btn_text):
@@ -358,6 +390,7 @@ def run():
     #saving session for future reload
     session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
     session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
+    compute_scan_requirements()
 
     if st.button("📂 Save Progress"):
         snapshot = {
@@ -461,11 +494,12 @@ def run():
                     st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
                     st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
                     changes_made = True
-            
-            # Clear scan buffer if anything changed
-            if changes_made and st.session_state.scan_buffer:
-                st.session_state.scan_buffer.clear()
-                st.info("Scan buffer reset due to kitted quantity or note changes. Please re-validate scans.")
+
+            if changes_made:
+                compute_scan_requirements()
+                if st.session_state.scan_buffer:
+                    st.session_state.scan_buffer.clear()
+                    st.info("Scan buffer reset due to kitted quantity or note changes. Please re-validate scans.")
 
     # ─── Finalize 
 
