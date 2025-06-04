@@ -343,16 +343,18 @@ def run():
             st.session_state.scan_buffer.clear()
             st.info("Quantities unlocked. Scan buffer cleared.")
         else:
-            # 🔄 Pull latest edits from data_editor widgets
+            # 🔄 Extract final edits from st.data_editor UI buffers
             for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
-                edited_key = f"{EDIT_ANCHOR}_{job}_{lot}"
-                if edited_key in st.session_state:
-                    edited_df = st.session_state[edited_key]
-                    if isinstance(edited_df, pd.DataFrame):
-                        st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
+                editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
+                if editor_key in st.session_state:
+                    editor_df = st.session_state[editor_key]
+                    if isinstance(editor_df, pd.DataFrame):
+                        # Only update kitted_qty and note
+                        for i, (_, row) in enumerate(editor_df.iterrows()):
+                            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
+                            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
             st.success("Quantities locked. Scanning enabled.")
 
-            
     #saving session for future reload
     session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
     session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
