@@ -42,6 +42,26 @@ class DuplicateScanError(Exception):
     """Same scan‑ID used twice."""
 
 # ─── Helpers 
+def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
+    cur.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
+    row = cur.fetchone()
+
+    if trans_type == "Job Issue":
+        if not row:
+            raise Exception(f"Scan {scan_id} is not registered to any location.")
+        location, item_code = row
+        if location != expected_location:
+            raise Exception(f"Scan {scan_id} is at {location}, not {expected_location}.")
+        if expected_item_code and item_code != expected_item_code:
+            raise Exception(f"Scan {scan_id} is registered to item {item_code}, not {expected_item_code}.")
+
+    elif trans_type == "Return":
+        if row:
+            location, item_code = row
+            raise Exception(f"Scan {scan_id} is already assigned to location {location}. Cannot return again.")
+    else:
+        raise ValueError(f"Unsupported transaction type: {trans_type}")
+
 
 def get_timezone():
     try:
@@ -118,37 +138,6 @@ def render_scan_inputs():
                     if item_code in df["item_code"].values:
                         st.session_state.scan_buffer.append((job, lot, item_code, sid))
                         break
-
-        if errors:
-            st.error("❌ Scan mismatch:\n" + "\n".join(errors))
-        else:
-            st.success("✅ All scans validated and assigned.")
-
-    
-    # 2. Initialize input fields per item_code
-    new_scan_map = {}
-    for item_code, qty_needed in item_requirements.items():
-        label = f"🔍 Scan for `{item_code}` ({item_meta[item_code]['description']}) — Need {qty_needed} unique scans"
-        input_key = f"scan_input_{item_code}"
-        raw = st.text_area(label, key=input_key, help="Enter one scan ID per line or comma-separated")
-        scan_list = list(filter(None, re.split(r"[\s,]+", raw.strip())))
-        new_scan_map[item_code] = scan_list
-
-    # 3. Validation + populate scan_buffer
-    if st.button("✅ Validate Scans"):
-        st.session_state.scan_buffer.clear()
-        errors = []
-        for item_code, expected_qty in item_requirements.items():
-            scans = new_scan_map[item_code]
-            unique_scans = list(dict.fromkeys(scans))  # remove dups, preserve order
-            if len(unique_scans) != expected_qty:
-                errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
-            for sid in unique_scans:
-                # Distribute scans evenly across job/lot entries
-                for (job, lot), df in st.session_state.pulltag_editor_df.items():
-                    if item_code in df["item_code"].values:
-                        st.session_state.scan_buffer.append((job, lot, item_code, sid))
-                        break  # stop after first match
 
         if errors:
             st.error("❌ Scan mismatch:\n" + "\n".join(errors))
@@ -249,44 +238,10 @@ def finalise():
         if not bad.empty:
             st.error("Negative qty only allowed on Return lines.")
             return
+
     summaries, tx, scans, inv, upd, dels, note_upd, qty_upd = [], [], [], [], [], [], []
     sb = st.session_state.scan_buffer
 
-    # 2️⃣ build changes
-    for (job, lot), df in st.session_state.pulltag_editor_df.items():
-        buf = {(j, l, ic): [] for j, l, ic, _ in sb}
-        for j, l, ic, sid in sb:
-            buf[(j, l, ic)].append(sid)
-        for _, r in df.iterrows():
-            ic, qty, tx_type = r["item_code"], int(r["kitted_qty"]), r["transaction_type"]
-            wh, loc = r["warehouse"], st.session_state.location
-            if qty == 0:
-                # Preserve the row — just update note and quantity
-                note_upd.append((r["note"], job, lot, ic))
-                qty_upd.append((qty, job, lot, ic))
-                upd.append(("adjusted", job, lot, ic))  # Optional: use custom status
-                continue
-            sc = buf.get((job, lot, ic), [])
-            if r["scan_required"] and len(set(sc)) != abs(qty):
-                raise ScanMismatchError(f"{job}-{lot}-{ic}: need {abs(qty)} scans, got {len(set(sc))}.")
-            qty_abs = abs(qty)
-            if tx_type == "Job Issue":
-                tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
-                inv.append((ic, loc, -qty_abs, wh))
-            else:  # Return
-                tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
-                inv.append((ic, loc, qty_abs, wh))
-            for sid in sc:
-                scans.append((ic, sid, job, lot, loc, tx_type, wh, st.session_state.user))
-                summaries.append({"job_number": job, "lot_number": lot, "item_code": ic,
-                                   "item_description": r.get("description", ""), "scan_id": sid, "qty": 1})
-            if not sc:
-                summaries.append({"job_number": job, "lot_number": lot, "item_code": ic,
-                                   "item_description": r.get("description", ""), "scan_id": None, "qty": qty_abs})
-            upd.append(("kitted" if tx_type == "Job Issue" else "returned", job, lot, ic))
-            if r["note"]:
-                note_upd.append((r["note"], job, lot, ic))
-                qty_upd.append((qty, job, lot, ic))  # qty is already int from kitted_qty
     # 📝 Require notes if qty changed
     missing_notes = []
     for (job, lot), df in st.session_state.pulltag_editor_df.items():
@@ -297,10 +252,57 @@ def finalise():
         logger.warning(f"Blocked finalization due to missing notes: {missing_notes}")
         st.warning(f"📝 Notes required for items with changed quantity: {', '.join(missing_notes)}")
         return
-    
-    # 3️⃣ commit
+
+    # 2️⃣ begin DB transaction + scan validation
     try:
         with get_db_cursor() as cur, cur.connection:
+            for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                buf = {(j, l, ic): [] for j, l, ic, _ in sb}
+                for j, l, ic, sid in sb:
+                    buf[(j, l, ic)].append(sid)
+
+                for _, r in df.iterrows():
+                    ic, qty, tx_type = r["item_code"], int(r["kitted_qty"]), r["transaction_type"]
+                    wh, loc = r["warehouse"], st.session_state.location
+
+                    if qty == 0:
+                        note_upd.append((r["note"], job, lot, ic))
+                        qty_upd.append((qty, job, lot, ic))
+                        upd.append(("adjusted", job, lot, ic))
+                        continue
+
+                    sc = buf.get((job, lot, ic), [])
+                    if r["scan_required"] and len(set(sc)) != abs(qty):
+                        raise ScanMismatchError(f"{job}-{lot}-{ic}: need {abs(qty)} scans, got {len(set(sc))}.")
+                    qty_abs = abs(qty)
+
+                    if tx_type == "Job Issue":
+                        tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
+                        inv.append((ic, loc, -qty_abs, wh))
+                    else:  # Return
+                        tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
+                        inv.append((ic, loc, qty_abs, wh))
+
+                    for sid in sc:
+                        validate_scan_location(cur, sid, tx_type, expected_location=loc, expected_item_code=ic)
+                        scans.append((ic, sid, job, lot, loc, tx_type, wh, st.session_state.user))
+                        summaries.append({
+                            "job_number": job, "lot_number": lot, "item_code": ic,
+                            "item_description": r.get("description", ""), "scan_id": sid, "qty": 1
+                        })
+
+                    if not sc:
+                        summaries.append({
+                            "job_number": job, "lot_number": lot, "item_code": ic,
+                            "item_description": r.get("description", ""), "scan_id": None, "qty": qty_abs
+                        })
+
+                    upd.append(("kitted" if tx_type == "Job Issue" else "returned", job, lot, ic))
+                    if r["note"]:
+                        note_upd.append((r["note"], job, lot, ic))
+                        qty_upd.append((qty, job, lot, ic))
+
+            # 3️⃣ commit all DB changes
             for d in tx:
                 if d[0] == "Job Issue":
                     cur.execute("""INSERT INTO transactions (transaction_type, date, warehouse, from_location, job_number, lot_number, item_code, quantity, user_id) VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)""", d)
@@ -315,19 +317,17 @@ def finalise():
             if note_upd:
                 cur.executemany("""UPDATE pulltags SET note=%s, last_updated=NOW() WHERE job_number=%s AND lot_number=%s AND item_code=%s""", note_upd)
             if qty_upd:
-                cur.executemany("""
-                    UPDATE pulltags 
-                    SET quantity = %s, last_updated = NOW()
-                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                """, qty_upd)
+                cur.executemany("""UPDATE pulltags SET quantity = %s, last_updated = NOW() WHERE job_number = %s AND lot_number = %s AND item_code = %s""", qty_upd)
             if dels:
                 cur.executemany("""DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s""", dels)
+
             cur.connection.commit()
+
     except Exception as e:
         st.error("❌ Finalization failed. Please check your scan counts, lot state, or try again. Error logged.")
         logger.exception("Finalisation failed")
         return
-        
+
     pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
                                         datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
     st.download_button("📄 Download Final Scan Summary", pdf, file_name="final_scan_summary.pdf", mime="application/pdf")
