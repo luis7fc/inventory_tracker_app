@@ -460,7 +460,10 @@ def run():
         """, (st.session_state.user,))
         sessions = cur.fetchall()
     if sessions:
-        session_options = {f"{label} ({saved_at[:16]})": sid for sid, label, saved_at in sessions}
+        session_options = {
+            f"{label} ({saved_at.strftime('%Y-%m-%d %H:%M')})": sid
+            for sid, label, saved_at in sessions
+        }
         selected = st.selectbox("📂 Resume or Delete a Saved Session", options=list(session_options.keys()))
         col1, col2 = st.columns([1, 1])
         with col1:
