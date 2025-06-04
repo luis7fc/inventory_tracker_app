@@ -75,8 +75,18 @@ def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=No
     return output_path
 
 #2) Scan Verification -> Inventory upserts -> pdf construct
-def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_location=None,
+def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location=None, to_location=None,
                    scanned_by=None, progress_callback=None):
+    # Determine transaction type early
+    if from_location and not to_location:
+        tx_type = "Job Issue"
+        loc_field, loc_value = "from_location", from_location
+    elif to_location and not from_location:
+        tx_type = "Return"
+        loc_field, loc_value = "to_location", to_location
+    else:
+        raise ValueError("Must provide either from_location or to_location")
+
     total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
     actual_count = len(scan_inputs)
     if actual_count != total_scans:
@@ -90,7 +100,6 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
             parts = k.split("_")
             if len(parts) >= 3:
                 scans_by_item.setdefault(parts[2], []).append(sid.strip())
-        validate_scan_location(cur, sid, tx_type, expected_location=st.session_state.location if tx_type == "Job Issue" else None)
 
         for item_code, lots in scans_needed.items():
             scan_list = scans_by_item.get(item_code, [])
@@ -98,14 +107,6 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
             total_needed = sum(lots.values())
             for (job, lot), need in lots.items():
                 qty = need
-                if from_location and not to_location:
-                    trans_type = "Job Issue"
-                    loc_field, loc_value = "from_location", from_location
-                elif to_location and not from_location:
-                    trans_type = "Return"
-                    loc_field, loc_value = "to_location", to_location
-                else:
-                    raise ValueError("Must provide either from_location or to_location")
 
                 cur.execute("SELECT warehouse FROM pulltags WHERE job_number = %s AND lot_number = %s AND item_code = %s LIMIT 1", (job, lot, item_code))
                 warehouse = cur.fetchone()[0]
@@ -115,23 +116,24 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                         transaction_type, date, warehouse, {loc_field},
                         job_number, lot_number, item_code, quantity, user_id
                     ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
-                """, (trans_type, warehouse, loc_value, job, lot, item_code, qty, scanned_by))
+                """, (tx_type, warehouse, loc_value, job, lot, item_code, qty, scanned_by))
 
                 for idx in range(1, qty + 1):
                     if scan_index >= len(scan_list):
                         raise Exception(f"Not enough scans for {item_code}")
                     sid = scan_list[scan_index]
                     scan_index += 1
-                    validate_scan_location(cur, sid, trans_type, from_location if trans_type == "Job Issue" else None)
+
+                    validate_scan_location(cur, sid, tx_type, loc_value)
 
                     cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'", (sid,))
                     issues = cur.fetchone()[0]
                     cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'", (sid,))
                     returns = cur.fetchone()[0]
 
-                    if trans_type == "Job Issue" and issues - returns > 0:
+                    if tx_type == "Job Issue" and issues - returns > 0:
                         raise Exception(f"Scan {sid} already issued.")
-                    elif trans_type == "Return" and issues > 0 and returns >= issues:
+                    elif tx_type == "Return" and issues > 0 and returns >= issues:
                         raise Exception(f"Scan {sid} already returned.")
 
                     try:
@@ -140,11 +142,11 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                                 item_code, scan_id, job_number, lot_number,
                                 scan_time, location, transaction_type, warehouse, scanned_by
                             ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
-                        """, (item_code, sid, job, lot, loc_value, trans_type, warehouse, scanned_by))
+                        """, (item_code, sid, job, lot, loc_value, tx_type, warehouse, scanned_by))
                     except IntegrityError:
                         raise Exception(f"Duplicate scan ID '{sid}' detected")
 
-                    if trans_type == "Return":
+                    if tx_type == "Return":
                         cur.execute("INSERT INTO current_scan_location (scan_id, item_code, location) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", (sid, item_code, loc_value))
                     else:
                         cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (sid,))
@@ -157,9 +159,9 @@ def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location, to_l
                     UPDATE pulltags
                     SET status = %s
                     WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                """, ('kitted' if trans_type == 'Job Issue' else 'returned', job, lot, item_code))
+                """, ('kitted' if tx_type == 'Job Issue' else 'returned', job, lot, item_code))
 
-                delta = qty if trans_type == "Return" else -qty
+                delta = qty if tx_type == "Return" else -qty
                 cur.execute("""
                     INSERT INTO current_inventory (item_code, location, quantity, warehouse)
                     VALUES (%s, %s, %s, %s)
