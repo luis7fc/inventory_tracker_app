@@ -29,23 +29,23 @@ class DuplicateScanError(Exception):
 def sync_editor_edits():
     for (job, lot), df in st.session_state.pulltag_editor_df.items():
         editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
-        if editor_key in st.session_state:
-            ui_df = st.session_state[editor_key]
-            if isinstance(ui_df, pd.DataFrame):
-                # Ensure indices align by using item_code
+        ui_df = st.session_state.get(editor_key)
+        if isinstance(ui_df, pd.DataFrame):
+            try:
+                # Use item_code for robust alignment
                 ui_df = ui_df.set_index("item_code")
                 df = df.set_index("item_code")
                 for item_code in df.index:
                     if item_code in ui_df.index:
                         df.at[item_code, "kitted_qty"] = ui_df.at[item_code, "kitted_qty"]
                         df.at[item_code, "note"] = ui_df.at[item_code, "note"]
-                        logger.info(f"Sync: {job}-{lot}-{item_code}: kitted_qty={df.at[item_code, 'kitted_qty']}, note={df.at[item_code, 'note']}")
-                df = df.reset_index()
+                        logger.info(f"[sync_editor_edits] {job}-{lot}-{item_code} → kitted_qty={df.at[item_code, 'kitted_qty']}")
+                df.reset_index(inplace=True)
                 st.session_state.pulltag_editor_df[(job, lot)] = df
-            else:
-                logger.warning(f"Editor key {editor_key} is not a DataFrame: {type(ui_df)}")
+            except Exception as e:
+                logger.error(f"[sync_editor_edits] Failed for {job}-{lot}: {e}")
         else:
-            logger.warning(f"Editor key {editor_key} not found in session state")
+            logger.warning(f"[sync_editor_edits] Skipped {editor_key} (not a DataFrame)")
 
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
     cur.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
@@ -108,6 +108,10 @@ def compute_scan_requirements():
 
 def render_scan_inputs():
     st.markdown("## 🧪 Item Scans Required")
+    sync_editor_edits()
+    compute_scan_requirements()
+    logger.info(f"[render_scan_inputs] Recomputed scan requirements: {st.session_state.get('item_requirements', {})}")
+
     if not st.session_state.pulltag_editor_df:
         st.info("Load pulltags to begin scanning.")
         return
