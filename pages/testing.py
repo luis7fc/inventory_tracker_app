@@ -92,7 +92,6 @@ def compute_scan_requirements():
 
 def render_scan_inputs():
     st.markdown("## 🧪 Item Scans Required")
-    sync_editor_edits()
     compute_scan_requirements()
     logger.info(f"[render_scan_inputs] FINAL item_requirements: {st.session_state.get('item_requirements', {})}")
     if not st.session_state.pulltag_editor_df:
