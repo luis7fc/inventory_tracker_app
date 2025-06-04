@@ -156,7 +156,7 @@ def bootstrap_state():
         "pulltag_editor_df": {},
         "location": "",
         "scan_buffer": [],
-        "user": st.experimental_user.get("username", "unknown"),
+        "user": st.user.get("username", "unknown"),
         "confirm_kitting": False,
         "locked": False,
     }
@@ -205,8 +205,8 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
     df["scan_required"] = df["item_code"].isin(scan_set)
     if "kitted_qty" not in df.columns:
         df["kitted_qty"] = df["qty_req"]
-    df["note"].fillna("", inplace=True)
-    df["warehouse"].fillna("MAIN", inplace=True)
+    df["note"] = df["note"].fillna("")
+    df["warehouse"] = df["warehouse"].fillna("MAIN")
     logger.info(f"Loaded pulltags for {job}-{lot}: {df[['item_code', 'kitted_qty', 'qty_req', 'transaction_type', 'scan_required']].to_dict()}")
     return df
 
@@ -332,7 +332,6 @@ def run():
                 logger.info(f"Unlocked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
             else:
                 if submitted:
-                    sync_editor_edits()
                     compute_scan_requirements()
                     for (job, lot), df in st.session_state.pulltag_editor_df.items():
                         logger.info(f"[FORM SUBMIT] Applied for {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
@@ -344,7 +343,6 @@ def run():
     session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
     compute_scan_requirements()
     if st.button("📂 Save Progress"):
-        sync_editor_edits()  # Ensure latest edits are saved
         snapshot = {
             "pulltag_editor_df": {f"{k[0]}|{k[1]}": df.to_dict() for k, df in st.session_state.pulltag_editor_df.items()},
             "scan_buffer": st.session_state.scan_buffer,
@@ -432,9 +430,8 @@ def run():
                 )
                 submitted = st.form_submit_button("📂 Apply Changes")
                 if submitted:
-                    st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
-                    # Restore hidden system fields
                     original = st.session_state.pulltag_editor_df.get((job, lot))
+                    st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
                     if original is not None and "scan_required" in original.columns:
                         st.session_state.pulltag_editor_df[(job, lot)]["scan_required"] = original["scan_required"]
 
