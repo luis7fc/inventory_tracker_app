@@ -26,27 +26,6 @@ class DuplicateScanError(Exception):
     """Same scan‑ID used twice."""
 
 # ─── Helpers 
-def sync_editor_edits():
-    for (job, lot), df in st.session_state.pulltag_editor_df.items():
-        editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
-        ui_df = st.session_state.get(editor_key)
-        if isinstance(ui_df, pd.DataFrame):
-            try:
-                # Use item_code for robust alignment
-                ui_df = ui_df.set_index("item_code")
-                df = df.set_index("item_code")
-                for item_code in df.index:
-                    if item_code in ui_df.index:
-                        df.at[item_code, "kitted_qty"] = ui_df.at[item_code, "kitted_qty"]
-                        df.at[item_code, "note"] = ui_df.at[item_code, "note"]
-                        logger.info(f"[sync_editor_edits] {job}-{lot}-{item_code} → kitted_qty={df.at[item_code, 'kitted_qty']}")
-                df.reset_index(inplace=True)
-                st.session_state.pulltag_editor_df[(job, lot)] = df
-            except Exception as e:
-                logger.error(f"[sync_editor_edits] Failed for {job}-{lot}: {e}")
-        else:
-            logger.warning(f"[sync_editor_edits] Skipped {editor_key} (not a DataFrame)")
-
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
     cur.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
     row = cur.fetchone()
@@ -429,14 +408,15 @@ def run():
                 if st.button("🧹 Clear Scan Buffer"):
                     st.session_state.scan_buffer.clear()
                     st.success("Scan buffer cleared.")
+    # ─── Pull‑Tag Editors (Refactored) ─────────────────────────────────────────────────────
     for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
         st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
         col1, col2 = st.columns([6, 1])
+    
         with col1:
             form_key = f"{EDIT_ANCHOR}_form_{job}_{lot}"
             with st.form(form_key):
                 editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
-                sync_editor_edits()  # Sync before rendering to ensure latest changes
                 edited_df = st.data_editor(
                     df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
                     key=editor_key,
@@ -453,13 +433,15 @@ def run():
                 )
                 submitted = st.form_submit_button("📂 Apply Changes")
                 if submitted:
-                    sync_editor_edits()
+                    st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
                     compute_scan_requirements()
                     st.success(f"Changes for `{job}-{lot}` saved.")
-                    logger.info(f"Applied changes for {job}-{lot}: {df[['item_code', 'kitted_qty']].to_dict()}")
+                    logger.info(f"[REPLACED DF] {job}-{lot}: {edited_df[['item_code', 'kitted_qty']].to_dict()}")
+    
         with col2:
             if st.button(f"❌ Remove `{job}-{lot}`", key=f"remove_{job}_{lot}"):
                 del st.session_state.pulltag_editor_df[(job, lot)]
+
     if not st.session_state.locked:
         st.warning("🔒 Lock quantities before finalizing.")
     else:
