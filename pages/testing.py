@@ -145,6 +145,8 @@ def generate_finalize_summary_pdf(rows, user, ts):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", "B", 12)
+    vals = [str(r["job_number"]), str(r["lot_number"]), str(r["item_code"]), str(r.get("item_description", "")), str(r.get("scan_id") or "-"), str(r["qty"])]
+    vals = [v.replace("\u2011", "-") for v in vals]
     pdf.cell(270, 10, "CRS Final Scan Summary Report", ln=True, align="C")
     pdf.set_font("Arial", size=9)
     pdf.cell(270, 6, f"Verified by: {user}   |   Date: {ts}", ln=True, align="C")
@@ -156,9 +158,18 @@ def generate_finalize_summary_pdf(rows, user, ts):
     pdf.ln()
     pdf.set_font_size(8)
     for r in rows:
-        vals = [r["job_number"], r["lot_number"], r["item_code"], r["item_description"], r.get("scan_id") or "‑", str(r["qty"])]
+        vals = [
+            str(r["job_number"]),
+            str(r["lot_number"]),
+            str(r["item_code"]),
+            str(r.get("item_description", "")),
+            str(r.get("scan_id") or "-"),
+            str(r["qty"])
+        ]
+        vals = [v.replace("\u2011", "-") for v in vals]
         for v, w in zip(vals, widths):
-            pdf.cell(w, 6, str(v), 1)
+            pdf.cell(w, 6, v, 1)
+
         pdf.ln()
     buf = BytesIO()
     pdf.output(buf)
