@@ -368,7 +368,6 @@ def run():
                 st.warning(f"⚠️ Location '{loc_input}' not found in system. Please verify or add it first.")
 
     # ─── Lock/Unlock Quantities ─────────────────────────────────────────────────
-    lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
     if st.button(lock_btn_text):
         st.session_state.locked = not st.session_state.locked
         if not st.session_state.locked:
@@ -381,10 +380,10 @@ def run():
                 if editor_key in st.session_state:
                     editor_df = st.session_state[editor_key]
                     if isinstance(editor_df, pd.DataFrame):
-                        # Only update kitted_qty and note
                         for i, (_, row) in enumerate(editor_df.iterrows()):
-                            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["kitted_qty"] = row["kitted_qty"]
-                            st.session_state.pulltag_editor_df[(job, lot)].iloc[i]["note"] = row["note"]
+                            df.at[i, "kitted_qty"] = row["kitted_qty"]
+                            df.at[i, "note"] = row["note"]
+            compute_scan_requirements()  # 🔁 recalculate after locking
             st.success("Quantities locked. Scanning enabled.")
 
     #saving session for future reload
