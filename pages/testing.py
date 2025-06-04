@@ -72,7 +72,13 @@ def render_scan_inputs():
         for _, row in df.iterrows():
             if row["scan_required"]:
                 ic = row["item_code"]
-                item_requirements[ic] += abs(int(row["kitted_qty"]))
+                try:
+                    qty = int(row["kitted_qty"])
+                    if row["scan_required"]:
+                        item_requirements[ic] += abs(qty)
+                        item_meta[ic] = {"description": row.get("description", "")}
+                except (ValueError, TypeError):
+                    st.error(f"Invalid kitted quantity for item {row['item_code']}")
                 item_meta[ic] = {
                     "description": row.get("description", ""),
                 }
@@ -215,7 +221,10 @@ def finalise():
             ic, qty, tx_type = r["item_code"], int(r["kitted_qty"]), r["transaction_type"]
             wh, loc = r["warehouse"], st.session_state.location
             if qty == 0:
-                dels.append((job, lot, ic))
+                # Preserve the row — just update note and quantity
+                note_upd.append((r["note"], job, lot, ic))
+                qty_upd.append((qty, job, lot, ic))
+                upd.append(("adjusted", job, lot, ic))  # Optional: use custom status
                 continue
             sc = buf.get((job, lot, ic), [])
             if r["scan_required"] and len(set(sc)) != abs(qty):
@@ -238,7 +247,17 @@ def finalise():
             if r["note"]:
                 note_upd.append((r["note"], job, lot, ic))
                 qty_upd.append((qty, job, lot, ic))  # qty is already int from kitted_qty
-
+    # 📝 Require notes if qty changed
+    missing_notes = []
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        for _, row in df.iterrows():
+            if row["kitted_qty"] != row["qty_req"] and not row["note"]:
+                missing_notes.append(f"{job}-{lot}-{row['item_code']}")
+    if missing_notes:
+        logger.warning(f"Blocked finalization due to missing notes: {missing_notes}")
+        st.warning(f"📝 Notes required for items with changed quantity: {', '.join(missing_notes)}")
+        return
+    
 
     # 3️⃣ commit
     try:
@@ -266,14 +285,23 @@ def finalise():
                 cur.executemany("""DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s""", dels)
             cur.connection.commit()
     except Exception as e:
-        st.error(str(e))
+        st.error("❌ Finalization failed. Please check your scan counts, lot state, or try again. Error logged.")
         logger.exception("Finalisation failed")
         return
+
 
     pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
                                         datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
     st.download_button("📄 Download Final Scan Summary", pdf, file_name="final_scan_summary.pdf", mime="application/pdf")
+    finalized_lots = list(st.session_state.pulltag_editor_df.keys())
+    logger.info(f"Finalized and archived: {finalized_lots}")
     st.session_state.scan_buffer.clear()
+    st.session_state.pulltag_editor_df.clear()
+    st.session_state.locked = False
+    st.success("✅ Finalization complete. All pulltags archived from editor.")
+
+
+
 
 # ─── Main UI ───────────────────────────────────────────────────────────────────
 
@@ -306,8 +334,10 @@ def run():
             st.session_state.scan_buffer.clear()
             st.info("Quantities unlocked. Scan buffer cleared.")
         else:
+            # 🛡️ Optional Guard — re-sync finalized quantities into session
+            for key, df in st.session_state.pulltag_editor_df.items():
+                st.session_state.pulltag_editor_df[key] = df.copy()
             st.success("Quantities locked. Scanning enabled.")
-    
 
     # ─── Scan Entry ───────────────────────────────────────────────────────────
     if st.session_state.locked:
@@ -345,7 +375,6 @@ def run():
                     "note": st.column_config.TextColumn("Notes"),
                 }
             )
-            
                         
             # Update session copy + detect changes
             changes_made = False
@@ -361,7 +390,6 @@ def run():
                 st.session_state.scan_buffer.clear()
                 st.info("Scan buffer reset due to kitted quantity or note changes. Please re-validate scans.")
 
-
     # ─── Finalize 
 
     if not st.session_state.locked:
@@ -369,4 +397,4 @@ def run():
     else:
         if st.button("✅ Finalize Kitting"):
             finalise()
-
+  
