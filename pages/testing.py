@@ -483,12 +483,14 @@ def run():
                     st.success(f"Session '{selected}' restored.")
                     logger.info(f"Restored session: pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
 
-        with col2:
-            if selected and st.button("🗑️ Delete This Session"):
-                sid = session_options[selected]
+    with col2:
+        if selected and st.button("🗑️ Delete This Session"):
+            sid = session_options[selected]
+            with get_db_cursor() as cur:
                 cur.execute("DELETE FROM kitting_sessions WHERE session_id = %s", (sid,))
-                st.success(f"Session '{selected}' deleted.")
-                st.experimental_rerun()
+            st.success(f"Session '{selected}' deleted.")
+            st.rerun()
+
     if st.session_state.locked:
         with st.expander("🔍 Scan Input"):
             render_scan_inputs()
