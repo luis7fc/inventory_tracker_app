@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from uuid import uuid4
+from uuid import uuid4, UUID
 from db import get_db_cursor
 
 # --- Helper DB functions ---
@@ -41,8 +41,15 @@ def insert_scan_location(cursor, scan_id, item_code, location):
         VALUES (%s, %s, %s, %s)
     """, (scan_id, item_code, location, datetime.now()))
 
+def is_valid_uuid(val):
+    try:
+        UUID(val, version=4)
+        return True
+    except ValueError:
+        return False
+
 def run():
-    st.title("🔄 Pallet Decomposition Tool")
+    st.title("\U0001F501 Pallet Decomposition Tool")
 
     if st.button("Reset Page"):
         for key in ["validated_pallet", "decompose_scans"]:
@@ -54,13 +61,19 @@ def run():
     pallet_id = st.text_input("Pallet Scan ID")
     qty = st.number_input("How many unit scan_ids?", min_value=1, step=1)
 
+    if location and location_to_warehouse(location) == "UNKNOWN":
+        st.warning(f"⚠️ Location '{location}' not found in system. Please confirm spelling or register it.")
+
     if st.button("Validate Pallet ID"):
         pallet_row = get_scan_location(pallet_id)
         if not pallet_row:
-            st.error("❌ Pallet ID not found.")
+            st.error(f"❌ Pallet ID '{pallet_id}' not found in current_scan_location.")
             st.session_state.pop("validated_pallet", None)
-        elif pallet_row["item_code"] != item_code or pallet_row["location"] != location:
-            st.error("❌ Pallet scan_id does not match the provided item_code and/or location.")
+        elif pallet_row["item_code"] != item_code:
+            st.error(f"❌ Item code mismatch: Pallet has '{pallet_row['item_code']}' but you entered '{item_code}'.")
+            st.session_state.pop("validated_pallet", None)
+        elif pallet_row["location"] != location:
+            st.error(f"❌ Location mismatch: Pallet is in '{pallet_row['location']}' but you entered '{location}'.")
             st.session_state.pop("validated_pallet", None)
         else:
             st.session_state["validated_pallet"] = pallet_row
@@ -77,9 +90,16 @@ def run():
                     st.error(f"❌ Expected {qty} scan IDs but got {len(new_ids)}.")
                     return
 
+                invalid_ids = [sid for sid in new_ids if not is_valid_uuid(sid)]
+                if invalid_ids:
+                    st.error("❌ Invalid UUID format detected:")
+                    st.code("\n".join(invalid_ids), language="text")
+                    return
+
                 existing_ids = check_existing_scan_ids(new_ids)
                 if existing_ids:
-                    st.error(f"❌ These scan_ids already exist: {', '.join(existing_ids)}")
+                    st.error("❌ One or more scan_ids already exist.")
+                    st.code("\n".join(existing_ids), language="text")
                     return
 
                 warehouse = location_to_warehouse(location)
@@ -101,5 +121,8 @@ def run():
                         st.success(f"✅ Decomposed pallet {pallet_id} into {qty} scans.")
                         st.session_state.pop("validated_pallet", None)
                 except Exception as e:
-                    cursor.execute("ROLLBACK")
+                    try:
+                        cursor.execute("ROLLBACK")
+                    except Exception:
+                        pass
                     st.error(f"❌ Transaction failed: {e}")
