@@ -24,11 +24,11 @@ def location_to_warehouse(location):
 def insert_verification(cursor, scan_id, item_code, location, transaction_type, scanned_by, job_number):
     cursor.execute("""
         INSERT INTO scan_verifications (
-            id, item_code, job_number, lot_number, scan_time, scan_id,
+            item_code, job_number, lot_number, scan_time, scan_id,
             location, transaction_type, warehouse, scanned_by
-        ) VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s)
     """, (
-        str(uuid4()), item_code, job_number, datetime.now(), scan_id,
+        item_code, job_number, datetime.now(), scan_id,
         location, transaction_type, location_to_warehouse(location), scanned_by
     ))
 
