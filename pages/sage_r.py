@@ -42,6 +42,9 @@ def query_pulltags(
         raise ValueError("At least one filter must be applied to query pulltags.")
 
     with get_db_cursor() as cur:
+        if job_lot_pairs:
+            job_lot_pairs = [(str(j), str(l)) for j, l in job_lot_pairs]
+
         sql = """
             SELECT id, job_number, lot_number, item_code, quantity,
                    uom, description, cost_code,
