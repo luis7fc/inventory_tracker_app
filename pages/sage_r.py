@@ -52,9 +52,8 @@ def query_pulltags(
                    transaction_type, status, last_updated, note
             FROM pulltags
             WHERE 
-              (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN (
-                SELECT * FROM UNNEST(%(job_lot_pairs)s) AS t(job_number text, lot_number text)
-              ))
+              (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN %s
+              )
               AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
               AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
               AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
@@ -64,9 +63,13 @@ def query_pulltags(
 
             ORDER BY job_number, lot_number, item_code
         """
+        if job_lot_pairs:
+            job_lot_pairs = [(str(j), str(l)) for j, l in job_lot_pairs]
+            pair_sql = "(" + ",".join(cur.mogrify("(%s,%s)", pair).decode() for pair in job_lot_pairs) + ")"
+        else:
+            pair_sql = "(SELECT NULL::text, NULL::text LIMIT 0)"  # dummy clause that never matches
 
-        cur.execute(sql, {
-            "job_lot_pairs": job_lot_pairs if job_lot_pairs else None,
+        cur.execute(sql % pair_sql, {
             "tx_types": tx_types if tx_types else None,
             "statuses": statuses if statuses else None,
             "warehouses": warehouses if warehouses else None,
