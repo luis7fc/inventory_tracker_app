@@ -158,6 +158,10 @@ def run():
 
     # Sidebar – Upload & Glossary -------------------------------------------
     with st.sidebar:
+        user_id = st.session_state.get("user")
+        if not user_id:
+            st.error("🔒 You must be logged in to access this assistant.")
+            st.stop()
         st.header("📤 Session‑Only Upload")
         up_file = st.file_uploader("CSV or Excel", type=["csv", "xlsx", "xls"], help="Data is kept in memory and passed to the AI for context only.")
         if up_file is not None:
@@ -237,9 +241,7 @@ def run():
                 if sql_query:
                     st.subheader("Generated SQL")
                     st.code(sql_query, language="sql")
-                    if not is_safe_sql(sql_query):
-                        st.error("Invalid SQL: All statements must be SELECT queries without harmful content.")
-                        return
+
                     with get_readonly_cursor() as cur:
                         cur.execute(sql_query)
                         rows = cur.fetchall()
