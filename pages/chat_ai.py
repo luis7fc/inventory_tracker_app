@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import contextlib
 from io import StringIO
 from datetime import datetime
 from openai import OpenAI
@@ -23,6 +24,7 @@ MAX_CSV_LINES     = 100   # cap CSV rows passed to LLM
 MAX_GLOSSARY_LINES = 60   # cap combined glossary lines
 
 # ─── Database cursor functions ─────────────────────────────────────────────
+@contextlib.contextmanager
 def get_readonly_cursor():
     """Yields a read-only cursor for SELECT queries, no commit needed."""
     conn = psycopg2.connect(
@@ -41,6 +43,7 @@ def get_readonly_cursor():
         cursor.close()
         conn.close()
 
+@contextlib.contextmanager
 def get_db_cursor():
     """Yields a cursor for read-write operations (e.g., logging)."""
     conn = psycopg2.connect(
@@ -66,7 +69,7 @@ FNOSOLAR = Fresno warehouse
 IESOLAR = Corona warehouse
 GAFMAT  = Cost code in items_master for GAF material
 RUNMAT  = Cost code in items_master for Sunrun material
-
+pulltag changes = pulltag rows for transaction type job issue with a comment other than default note - imported
 scan_id = Unique barcode UUID representing an inventory item; must be recorded via scan_verification for all transactions except Manual Adjustments
 kitted = State where materials are picked, scanned, and staged; reflected in pulltags.status as 'kitted' or 'exported'
 staging = Intermediate location used to consolidate items for shipment or inspection; may hold mixed SKUs if multi_item_allowed is True
