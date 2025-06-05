@@ -48,7 +48,10 @@ def query_pulltags(
                    warehouse AS location,
                    transaction_type, status, last_updated, note
             FROM pulltags
-            WHERE (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN (SELECT * FROM UNNEST(%(job_lot_pairs)s)))
+            WHERE 
+              (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN (
+                SELECT * FROM UNNEST(%(job_lot_pairs)s) AS t(job_number text, lot_number text)
+              ))
               AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
               AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
               AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
