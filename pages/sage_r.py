@@ -29,7 +29,7 @@ def get_distinct_statuses() -> List[str]:
     with get_db_cursor() as cur:
         cur.execute("SELECT DISTINCT status FROM pulltags ORDER BY status;")
         return [r[0] for r in cur.fetchall()]
-        
+
 def query_pulltags(
     job_lot_pairs: Optional[List[Tuple[str, str]]] = None,
     tx_types: Optional[List[str]] = None,
@@ -42,8 +42,10 @@ def query_pulltags(
         raise ValueError("At least one filter must be applied to query pulltags.")
 
     with get_db_cursor() as cur:
+        pair_sql = "(SELECT NULL::text, NULL::text LIMIT 0)"  # default dummy
         if job_lot_pairs:
             job_lot_pairs = [(str(j), str(l)) for j, l in job_lot_pairs]
+            pair_sql = "(" + ",".join(cur.mogrify("(%s,%s)", pair).decode() for pair in job_lot_pairs) + ")"
 
         sql = """
             SELECT id, job_number, lot_number, item_code, quantity,
@@ -52,24 +54,17 @@ def query_pulltags(
                    transaction_type, status, last_updated, note
             FROM pulltags
             WHERE 
-              (%(job_lot_pairs)s IS NULL OR (job_number, lot_number) IN %s
-              )
+              ({pair_sql}) IS NULL OR (job_number, lot_number) IN {pair_sql}
               AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
               AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
               AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
               AND (%(start_date)s IS NULL OR last_updated::date >= %(start_date)s)
               AND (%(end_date)s IS NULL OR last_updated::date <= %(end_date)s)
               AND quantity != 0
-
             ORDER BY job_number, lot_number, item_code
-        """
-        if job_lot_pairs:
-            job_lot_pairs = [(str(j), str(l)) for j, l in job_lot_pairs]
-            pair_sql = "(" + ",".join(cur.mogrify("(%s,%s)", pair).decode() for pair in job_lot_pairs) + ")"
-        else:
-            pair_sql = "(SELECT NULL::text, NULL::text LIMIT 0)"  # dummy clause that never matches
+        """.format(pair_sql=pair_sql)
 
-        cur.execute(sql % pair_sql, {
+        cur.execute(sql, {
             "tx_types": tx_types if tx_types else None,
             "statuses": statuses if statuses else None,
             "warehouses": warehouses if warehouses else None,
