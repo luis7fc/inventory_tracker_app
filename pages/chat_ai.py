@@ -147,10 +147,6 @@ def build_glossary_context() -> str | None:
     glossary_text = "\n".join(f"- {line}" for line in deduped)  # Bulleted list for clarity
     return "Domain glossary (interpret shorthand accordingly):\n" + glossary_text
 
-def is_safe_sql(sql: str) -> bool:
-    statements = [s.strip() for s in sql.split(";") if s.strip()]
-    return all(s.upper().startswith("SELECT") for s in statements)
-
 # ─── Main app ──────────────────────────────────────────────────────────────
 
 def run():
