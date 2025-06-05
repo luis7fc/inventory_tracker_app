@@ -48,13 +48,14 @@ def query_pulltags(
                    warehouse AS location,
                    transaction_type, status, last_updated, note
             FROM pulltags
-            WHERE (%(job_lot_pairs)s IS NULL OR (ROW(job_number, lot_number)) = ANY(%(job_lot_pairs)s))
+            WHERE (%(job_lot_pairs)s IS NULL OR (ROW(job_number, lot_number)) = ANY(%(job_lot_pairs)s::text[][]))
               AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
               AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
               AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
               AND (%(start_date)s IS NULL OR last_updated::date >= %(start_date)s)
               AND (%(end_date)s IS NULL OR last_updated::date <= %(end_date)s)
               AND quantity != 0
+
             ORDER BY job_number, lot_number, item_code
         """
 
