@@ -120,7 +120,7 @@ def mark_exported(ids: List[str]) -> None:
 def revert_exported_pulltags(ids: List[str], note: str) -> None:
     if not ids:
         return
-    uuid_ids = [uuid.UUID(x) for x in ids]
+    uuid_ids = [str(x) for x in ids]  # Ensure they're strings, not UUID objects
     with get_db_cursor() as cur:
         cur.execute(
             """
@@ -133,6 +133,7 @@ def revert_exported_pulltags(ids: List[str], note: str) -> None:
             """,
             (note, datetime.utcnow(), uuid_ids),
         )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TXT builder
 # ─────────────────────────────────────────────────────────────────────────────
