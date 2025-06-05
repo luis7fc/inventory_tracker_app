@@ -5,11 +5,7 @@ from db import get_db_cursor
 
 # Manual parsing based on fixed field positions, handling embedded commas and quotes
 
-def parse_to_records(txt_file):
-    """
-    Parse a TXT file and return a list of dicts for each valid IL row without inserting.
-    Fields: warehouse, item_code, quantity, uom, description, job_number, lot_number, cost_code
-    """
+def parse_to_records(txt_file, as_return=False):
     raw = txt_file.read()
     text = raw.decode("utf-8", errors="replace")
     records = []
@@ -44,6 +40,12 @@ def parse_to_records(txt_file):
         if quantity <= 0:
             continue
 
+        if as_return:
+            quantity = -abs(quantity)
+            transaction_type = "Return"
+        else:
+            transaction_type = "Job Issue"
+
         records.append({
             "warehouse": warehouse,
             "item_code": item_code,
@@ -52,7 +54,8 @@ def parse_to_records(txt_file):
             "description": description,
             "job_number": job_number,
             "lot_number": lot_number,
-            "cost_code": cost_code
+            "cost_code": cost_code,
+            "transaction_type": transaction_type
         })
     txt_file.seek(0)
     return records
@@ -67,12 +70,12 @@ def parse_and_insert(records):
                 """
                 SELECT 1 FROM pulltags
                 WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                  AND transaction_type IN ('Job Issue', 'Return')
+                  AND transaction_type = %s
                 """,
-                (rec['job_number'], rec['lot_number'], rec['item_code'])
+                (rec['job_number'], rec['lot_number'], rec['item_code'], rec['transaction_type'])
             )
             if cursor.fetchone():
-                skipped.append(f"{rec['job_number']} / {rec['lot_number']} / {rec['item_code']}")
+                skipped.append(f"{rec['job_number']} / {rec['lot_number']} / {rec['item_code']} ({rec['transaction_type']})")
                 continue
 
             cursor.execute(
@@ -80,12 +83,12 @@ def parse_and_insert(records):
                 INSERT INTO pulltags
                   (warehouse, item_code, quantity, uom, description,
                    job_number, lot_number, cost_code, transaction_type, status, note)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'Job Issue','pending','Imported')
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending','Imported')
                 """,
                 (
                     rec['warehouse'], rec['item_code'], rec['quantity'],
                     rec['uom'], rec['description'], rec['job_number'],
-                    rec['lot_number'], rec['cost_code']
+                    rec['lot_number'], rec['cost_code'], rec['transaction_type']
                 )
             )
             insert_count += 1
@@ -97,6 +100,8 @@ def run():
 
     if 'processed_files' not in st.session_state:
         st.session_state.processed_files = set()
+
+    as_return = st.checkbox("Upload as Returns (negate quantity and set transaction_type = 'Return')")
 
     uploaded_files = st.file_uploader(
         "Upload Pull-tag .TXT Files",
@@ -113,7 +118,7 @@ def run():
 
     all_records = []
     for f in new_files:
-        all_records.extend(parse_to_records(f))
+        all_records.extend(parse_to_records(f, as_return=as_return))
     if not all_records:
         st.warning("No valid IL rows found in selected files.")
         return
