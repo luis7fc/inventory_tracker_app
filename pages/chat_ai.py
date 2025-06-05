@@ -121,8 +121,12 @@ SCENARIOS = [
 # ─── Utility helpers ───────────────────────────────────────────────────────
 
 def extract_block(text: str, tag: str) -> str | None:
-    m = re.search(rf"```{tag}\\n(.*?)```", text, re.DOTALL | re.IGNORECASE)
-    return m.group(1).strip() if m else None
+    m = re.search(rf"```{tag}\n(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    # fallback: extract SQL-looking text even without fencing
+    m2 = re.search(r"SELECT .*?FROM .*?(?:GROUP BY .*?|ORDER BY .*?|$)", text, re.IGNORECASE | re.DOTALL)
+    return m2.group(0).strip() if m2 else None
 
 def df_to_limited_csv(df: pd.DataFrame, max_rows: int = MAX_CSV_LINES) -> str:
     if len(df) > max_rows:
