@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from uuid import uuid4, UUID
+from uuid import uuid4
 from db import get_db_cursor
 
 # --- Helper DB functions ---
@@ -40,13 +40,6 @@ def insert_scan_location(cursor, scan_id, item_code, location):
         INSERT INTO current_scan_location (scan_id, item_code, location, updated_at)
         VALUES (%s, %s, %s, %s)
     """, (scan_id, item_code, location, datetime.now()))
-
-def is_valid_uuid(val):
-    try:
-        UUID(val, version=4)
-        return True
-    except ValueError:
-        return False
 
 def run():
     st.title("\U0001F501 Pallet Decomposition Tool")
@@ -88,12 +81,6 @@ def run():
                 new_ids = [s.strip() for s in raw_input.replace(",", "\n").splitlines() if s.strip()]
                 if len(new_ids) != qty:
                     st.error(f"❌ Expected {qty} scan IDs but got {len(new_ids)}.")
-                    return
-
-                invalid_ids = [sid for sid in new_ids if not is_valid_uuid(sid)]
-                if invalid_ids:
-                    st.error("❌ Invalid UUID format detected:")
-                    st.code("\n".join(invalid_ids), language="text")
                     return
 
                 existing_ids = check_existing_scan_ids(new_ids)
