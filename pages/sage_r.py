@@ -8,7 +8,6 @@ import pandas as pd
 import streamlit as st
 from db import get_db_cursor
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Session-state bootstrap
 # ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +24,47 @@ def _init_session_state() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # DB helpers
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Embedded SQL Builder Utility
+# ─────────────────────────────────────────────────────────────────────────────
+def build_pulltag_query(
+    cur,
+    job_lot_pairs: Optional[List[Tuple[str, str]]] = None,
+    tx_types: Optional[List[str]] = None,
+    statuses: Optional[List[str]] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    warehouses: Optional[List[str]] = None,
+) -> str:
+    """Dynamically builds a filtered SQL query for the pulltags table."""
+
+    filters = [
+        "(%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))",
+        "(%(statuses)s IS NULL OR status = ANY(%(statuses)s))",
+        "(%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))",
+        "(%(start_date)s IS NULL OR last_updated::date >= %(start_date)s)",
+        "(%(end_date)s IS NULL OR last_updated::date <= %(end_date)s)",
+        "quantity != 0"
+    ]
+
+    if job_lot_pairs:
+        job_lot_pairs = [(str(j), str(l)) for j, l in job_lot_pairs]
+        pair_values = ",".join(cur.mogrify("(%s,%s)", pair).decode() for pair in job_lot_pairs)
+        filters.append(f"(job_number, lot_number) IN ({pair_values})")
+
+    where_clause = " AND ".join(filters)
+
+    sql = f"""
+        SELECT id, job_number, lot_number, item_code, quantity,
+               uom, description, cost_code,
+               warehouse AS location,
+               transaction_type, status, last_updated, note
+        FROM pulltags
+        WHERE {where_clause}
+        ORDER BY job_number, lot_number, item_code
+    """
+    return sql
+
 def get_distinct_statuses() -> List[str]:
     with get_db_cursor() as cur:
         cur.execute("SELECT DISTINCT status FROM pulltags ORDER BY status;")
@@ -42,27 +82,15 @@ def query_pulltags(
         raise ValueError("At least one filter must be applied to query pulltags.")
 
     with get_db_cursor() as cur:
-        pair_sql = "(SELECT NULL::text, NULL::text LIMIT 0)"  # default dummy
-        if job_lot_pairs:
-            job_lot_pairs = [(str(j), str(l)) for j, l in job_lot_pairs]
-            pair_sql = "(" + ",".join(cur.mogrify("(%s,%s)", pair).decode() for pair in job_lot_pairs) + ")"
-
-        sql = """
-            SELECT id, job_number, lot_number, item_code, quantity,
-                   uom, description, cost_code,
-                   warehouse AS location,
-                   transaction_type, status, last_updated, note
-            FROM pulltags
-            WHERE 
-              ({pair_sql}) IS NULL OR (job_number, lot_number) IN {pair_sql}
-              AND (%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))
-              AND (%(statuses)s IS NULL OR status = ANY(%(statuses)s))
-              AND (%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))
-              AND (%(start_date)s IS NULL OR last_updated::date >= %(start_date)s)
-              AND (%(end_date)s IS NULL OR last_updated::date <= %(end_date)s)
-              AND quantity != 0
-            ORDER BY job_number, lot_number, item_code
-        """.format(pair_sql=pair_sql)
+        sql = build_pulltag_query(
+            cur=cur,
+            job_lot_pairs=job_lot_pairs,
+            tx_types=tx_types,
+            statuses=statuses,
+            start_date=start_date,
+            end_date=end_date,
+            warehouses=warehouses
+        )
 
         cur.execute(sql, {
             "tx_types": tx_types if tx_types else None,
@@ -75,6 +103,7 @@ def query_pulltags(
         rows = cur.fetchall()
         cols = [desc.name for desc in cur.description]
     return pd.DataFrame(rows, columns=cols)
+
 
 def save_changes_to_db(df: pd.DataFrame) -> None:
     with get_db_cursor() as cur:
@@ -104,7 +133,7 @@ def mark_exported(ids: List[str]) -> None:
         return
 
     # Cast every id string to a real UUID object so psycopg2 adapts them
-    uuid_ids = [uuid.UUID(x) for x in ids]
+    # uuid_ids = [uuid.UUID(x) for x in ids]
 
     with get_db_cursor() as cur:
         # UUID objects → uuid[] automatically, so the = operator matches
