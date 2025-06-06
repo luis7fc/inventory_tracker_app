@@ -113,19 +113,16 @@ def render_scan_inputs():
     if st.button("✅ Validate Scans"):
         st.session_state.scan_buffer.clear()
         errors = []
-        if errors:
-            st.session_state.scans_valid = False
-            st.session_state.scan_buffer.clear()   # discard partials
-            st.error("❌ Scan validation errors:\n" + "\n".join(errors))
-        else:
-            st.session_state.scans_valid = True
-            st.success("✅ All scans validated and assigned.")
+        
         with get_db_cursor() as cur:
             for item_code, expected_qty in item_requirements.items():
                 scans = new_scan_map[item_code]
                 unique_scans = list(dict.fromkeys(scans))
+                expected_qty = abs(expected_qty)
                 if len(unique_scans) != expected_qty:
                     errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
+                    continue
+                    
                 for sid in unique_scans:
                     matched = False
                     for (job, lot), df in st.session_state.pulltag_editor_df.items():
@@ -142,8 +139,11 @@ def render_scan_inputs():
                         errors.append(f"{item_code} ({sid}): No matching pulltag found.")
 
         if errors:
+            st.session_state.scans_valid = False
+            st.session_state.scan_buffer.clear()   # discard partials
             st.error("❌ Scan validation errors:\n" + "\n".join(errors))
         else:
+            st.session_state.scans_valid = True
             st.success("✅ All scans validated and assigned.")
 
 def generate_finalize_summary_pdf(rows, user, ts):
@@ -190,7 +190,7 @@ def bootstrap_state():
         "user": st.user.get("username", "unknown"),
         "confirm_kitting": False,
         "locked": False,
-        "scan_valid": False,
+        "scans_valid": False,
     }
     for k, v in base.items():
         st.session_state.setdefault(k, v)
@@ -243,16 +243,16 @@ def load_pulltags(job: str, lot: str, tx_type: str) -> pd.DataFrame:
     return df
 
 def finalise():
-    #make sure requirements are current
     compute_scan_requirements()
-    #do any rows still require scans?
-    need_scans = any(
+    
+    needs_scans = any(
         r.get("scan_required", False)
         for df in st.session_state.pulltag_editor_df.values()
         for _, r in df.iterrows()
     )
+    
     if needs_scans and not st.session_state.scans_valid:
-        st.error("Please validate scans first - click "Validate Scans" and fix any errors. ")
+        st.error("Please validate scans first - click Validate Scans and fix any errors. ")
         return
     
     for df in st.session_state.pulltag_editor_df.values():
@@ -405,27 +405,26 @@ def finalise():
 def run():
     bootstrap_state()
     st.title("📦 Multi-Lot Job Kitting")
+    
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
         job = st.text_input("Job Number", key="job_input")
     with col2:
         lot = st.text_input("Lot Number", key="lot_input")
     with col3:
-      tx_type = st.selectbox(
-            "Transaction Type",
-            ["Job Issue", "Return"],
-            index=0,            # default = Job Issue
-            key="tx_type_choice"
-        )
-
+        tx_type = st.selectbox("Transaction Type", ["Job Issue", "Return"], index=0, key="tx_type_choice")
+        
         if st.button("➕ Load Pull‑Tags"):
-            if not validate_alphanum(job, "Job Number") or not validate_alphanum(lot, "Lot Number"):
+            if not (validate_alphanum(job, "Job Number") and validate_alphanum(lot, "Lot Number")):
                 return
             df = load_pulltags(job, lot, tx_type)
             if not df.empty:
                 st.session_state.pulltag_editor_df[(job, lot)] = df
+                st.session_state.scans_valid = False # Reset flag when new lot loads
+                
     loc_input = st.text_input("Staging Location", value=st.session_state.location or "")
     st.session_state.location = loc_input
+    
     if loc_input:
         with get_db_cursor() as cur:
             cur.execute("SELECT 1 FROM locations WHERE location_code = %s", (loc_input,))
@@ -435,18 +434,25 @@ def run():
     with st.form("lock_quantities_form"):
         submitted = st.form_submit_button(lock_btn_text)
         if submitted:
+            # Flip the lock flag
             st.session_state.locked = not st.session_state.locked
+            # Every toggle invalidates earlier scan CHECKS
+            st.session_state.scans_valid = False #force revalidate after lock toggle
+            
             if not st.session_state.locked:
-                st.info("Quantities unlocked. If any quantities changed, please revalidate scans before finalizing.")
-                logger.info(f"Unlocked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
+                # Unlock
+                st.info("Quantities unlocked — please run Validate Scans again before finalizing.")
+               
             else:
-                if submitted:
-                    compute_scan_requirements()
-                    for (job, lot), df in st.session_state.pulltag_editor_df.items():
-                        logger.info(f"[FORM SUBMIT] Applied for {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
-                    
+                #-----LOCK-----
+                compute_scan_requirements() # refresh after edits
+                logger.info(
+                    "[LOCK] item_requirements → %s",
+                    st.session_state.item_requirements)
 
+                
                 st.success("Quantities locked. Scanning enabled.")
+                
                 logger.info(f"Locked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
     session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
     session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
