@@ -194,7 +194,6 @@ base_pages = [
 
 # Admin-only pages
 admin_pages = [
-    # "Bulk Export",
     "Upload Init CSV",
     "Manage Locations",
     "Users",
@@ -202,8 +201,11 @@ admin_pages = [
 ]
 
 # Combine pages based on role
+user = st.session_state.get("user", "")
 if st.session_state.get('role') == 'admin':
-    pages = base_pages + admin_pages
+    pages = base_pages + [
+        page for page in admin_pages if page != "Testing" or user == "lmoreno"
+    ]
 else:
     pages = base_pages
 
