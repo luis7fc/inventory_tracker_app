@@ -1,577 +1,583 @@
 import streamlit as st
+import json
+import pandas as pd
+import re
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fpdf import FPDF
-import tempfile
-from psycopg2 import IntegrityError
-from db import (
-    get_pulltag_rows,
-    get_db_cursor,
-    insert_pulltag_line,
-    update_pulltag_line,
-    delete_pulltag_line,
-)
-import os
+from io import BytesIO
+import logging
+import uuid
+from psycopg2 import OperationalError, IntegrityError
+from collections import defaultdict
+from db import get_db_cursor
 
-EDIT_ANCHOR = "scan-edit"          # <--- add me near the top of the file (global)
-#Helper Functions
+# ─── Logging 
+logging.basicConfig(level=logging.INFO, filename="kitting_app.log")
+logger = logging.getLogger(__name__)
+EDIT_ANCHOR = "scan-edit"
 
-#error message structure
-def user_error(msg: str):
-    st.error(f"❌ {msg}")
-    st.stop()
-    
-# ─── Scan Location Validator ────────────────────────────────────────────────
-def validate_scan_location(cur, scan_id, trans_type, expected_location=None):
-    cur.execute("SELECT location FROM current_scan_location WHERE scan_id = %s", (scan_id,))
+# ─── Exceptions 
+class ScanMismatchError(Exception):
+    """Qty ≠ #scans."""
+class ExportedPulltagError(Exception):
+    """Pull‑tag already exported."""
+class DuplicateScanError(Exception):
+    """Same scan‑ID used twice."""
+
+# ─── Helpers 
+def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
+    cur.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
     row = cur.fetchone()
     if trans_type == "Job Issue":
         if not row:
             raise Exception(f"Scan {scan_id} is not registered to any location.")
-        if row[0] != expected_location:
-            raise Exception(f"Scan {scan_id} is at {row[0]}, not {expected_location}.")
-    elif trans_type == "Return" and row:
-        raise Exception(f"Scan {scan_id} is already assigned to location {row[0]}. Cannot return again.")
-    elif trans_type not in ("Job Issue", "Return"):
+        location, item_code = row
+        if location != expected_location:
+            raise Exception(f"Scan {scan_id} is at {location}, not {expected_location}.")
+        if expected_item_code and item_code != expected_item_code:
+            raise Exception(f"Scan {scan_id} is registered to item {item_code}, not {expected_item_code}.")
+    elif trans_type == "Return":
+        if row:
+            location, item_code = row
+            raise Exception(f"Scan {scan_id} is already assigned to location {location}. Cannot return again.")
+    else:
         raise ValueError(f"Unsupported transaction type: {trans_type}")
-#Generate summary PDF
-def generate_finalize_summary_pdf(summary_data, verified_by=None, verified_on=None):
 
-    output_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
+def get_timezone():
+    try:
+        return ZoneInfo(st.secrets.get("APP_TIMEZONE", "America/Los_Angeles"))
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
 
+def validate_alphanum(v: str, field: str) -> bool:
+    if not re.match(r"^[A-Za-z0-9\-]+$", v):
+        st.error(f"{field} must be alphanumeric (dashes allowed).")
+        return False
+    return True
+
+
+def compute_scan_requirements():
+    logger.info("[compute_scan_requirements] START")
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        logger.info(f"[CSR] {job}-{lot} → {df[['item_code', 'kitted_qty']].to_dict()}")
+
+    if not st.session_state.pulltag_editor_df:
+        st.session_state.item_requirements = {}
+        st.session_state.item_meta = {}
+        return
+    item_requirements = defaultdict(int)
+    item_meta = {}
+    errors = []
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        for _, row in df.iterrows():
+            if row["scan_required"]:
+                ic = row["item_code"]
+                try:
+                    qty = int(row["kitted_qty"])
+                    item_requirements[ic] += abs(qty)
+                    description = row.get("description", "")
+                    if ic in item_meta and item_meta[ic]["description"] != description:
+                        st.warning(f"Inconsistent description for {ic}: using '{description}'")
+                    item_meta[ic] = {"description": description}
+                except (ValueError, TypeError):
+                    errors.append(f"Invalid kitted quantity for item {ic} in {job}-{lot}")
+    if errors:
+        st.error("❌ Scan requirement errors:\n" + "\n".join(errors))
+        st.session_state.item_requirements = {}
+        st.session_state.item_meta = {}
+    else:
+        st.session_state.item_requirements = item_requirements
+        st.session_state.item_meta = item_meta
+
+def render_scan_inputs():
+    st.markdown("## 🧪 Item Scans Required")
+    compute_scan_requirements()
+    logger.info(f"[render_scan_inputs] FINAL item_requirements: {st.session_state.get('item_requirements', {})}")
+
+    if not st.session_state.pulltag_editor_df:
+        st.info("Load pulltags to begin scanning.")
+        return
+
+    item_requirements = st.session_state.get("item_requirements", {})
+    item_meta = st.session_state.get("item_meta", {})
+    new_scan_map = {}
+
+    for item_code, qty_needed in item_requirements.items():
+        label = f"🔍 Scan for `{item_code}` ({item_meta[item_code]['description']}) — Need {qty_needed} unique scans"
+        input_key = f"scan_input_{item_code}"
+        raw = st.text_area(label, key=input_key, help="Enter one scan ID per line or comma-separated")
+        scan_list = list(filter(None, re.split(r"[\s,]+", raw.strip())))
+        new_scan_map[item_code] = scan_list
+
+    if st.button("✅ Validate Scans"):
+        st.session_state.scan_buffer.clear()
+        errors = []
+        
+        with get_db_cursor() as cur:
+            for item_code, expected_qty in item_requirements.items():
+                scans = new_scan_map[item_code]
+                unique_scans = list(dict.fromkeys(scans))
+                expected_qty = abs(expected_qty)
+                if len(unique_scans) != expected_qty:
+                    errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
+                    continue
+                    
+                for sid in unique_scans:
+                    matched = False
+                    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                        if item_code in df["item_code"].values:
+                            tx_type = df[df["item_code"] == item_code]["transaction_type"].iloc[0]
+                            try:
+                                validate_scan_location(cur, sid, tx_type, expected_location=st.session_state.location, expected_item_code=item_code)
+                                st.session_state.scan_buffer.append((job, lot, item_code, sid))
+                            except Exception as e:
+                                errors.append(f"{item_code} ({sid}): {str(e)}")
+                            matched = True
+                            break
+                    if not matched:
+                        errors.append(f"{item_code} ({sid}): No matching pulltag found.")
+
+        if errors:
+            st.session_state.scans_valid = False
+            st.session_state.scan_buffer.clear()   # discard partials
+            st.error("❌ Scan validation errors:\n" + "\n".join(errors))
+        else:
+            st.session_state.scans_valid = True
+            st.success("✅ All scans validated and assigned.")
+
+def generate_finalize_summary_pdf(rows, user, ts):
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    pdf.cell(270, 10, txt="CRS Final Scan Summary Report", ln=True, align="C")
-    pdf.ln(5)
-    if verified_by or verified_on:
-        user_text = f"Verified By: {verified_by or 'N/A'}"
-        time_text = f"Date: {verified_on or 'N/A'}"
-        pdf.cell(270, 10, f"{user_text} | {time_text}", ln=True, align="C")
-        pdf.ln(5)
-
-    headers = ["Job Number", "Lot Number", "Item Code", "Description", "Scan ID", "Qty"]
-    col_widths = [35, 30, 30, 100, 50, 20]
-
-    for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 10, header, border=1)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(270, 10, "CRS Final Scan Summary Report", ln=True, align="C")
+    pdf.set_font("Arial", size=9)
+    pdf.cell(270, 6, f"Verified by: {user}   |   Date: {ts}", ln=True, align="C")
+    pdf.ln(4)
+    headers = ["Job", "Lot", "Item", "Description", "Scan ID", "Qty"]
+    widths = [30, 25, 25, 110, 60, 15]
+    for h, w in zip(headers, widths):
+        pdf.cell(w, 6, h, 1)
     pdf.ln()
-
-    for row in summary_data:
-        row_data = [
-            row.get("job_number", ""),
-            row.get("lot_number", ""),
-            row.get("item_code", ""),
-            row.get("item_description", ""),
-            row.get("scan_id") or "- not scanned -",
-            str(row.get("qty", 1))
+    pdf.set_font_size(8)
+    for r in rows:
+        vals = [
+            str(r["job_number"]),
+            str(r["lot_number"]),
+            str(r["item_code"]),
+            str(r.get("item_description", "")),
+            str(r.get("scan_id") or "-"),
+            str(r["qty"])
         ]
-        for i, val in enumerate(row_data):
-            pdf.cell(col_widths[i], 10, str(val), border=1)
+        vals = [v.replace("\u2011", "-") for v in vals]
+        for v, w in zip(vals, widths):
+            pdf.cell(w, 6, v, 1)
         pdf.ln()
+    buf = BytesIO()
+    pdf_bytes = pdf.output(dest="S").encode("latin1")
+    buf.write(pdf_bytes)
+    buf.seek(0)
+    return buf
 
-    pdf.output(output_path)
-    return output_path
+def bootstrap_state():
+    base = {
+        "session_id": str(uuid.uuid4()),
+        "job_lot_queue": [],
+        "pulltag_editor_df": {},
+        "location": "",
+        "scan_buffer": [],
+        "user": st.user.get("username", "unknown"),
+        "confirm_kitting": False,
+        "locked": False,
+        "scans_valid": False,
+    }
+    for k, v in base.items():
+        st.session_state.setdefault(k, v)
 
-#2) Scan Verification -> Inventory upserts -> pdf construct
-def finalize_scans(scans_needed, scan_inputs, job_lot_queue, from_location=None, to_location=None,
-                   scanned_by=None, progress_callback=None):
-    # Determine transaction type early
-    if from_location and not to_location:
-        tx_type = "Job Issue"
-        loc_field, loc_value = "from_location", from_location
-    elif to_location and not from_location:
-        tx_type = "Return"
-        loc_field, loc_value = "to_location", to_location
-    else:
-        raise ValueError("Must provide either from_location or to_location")
-
-    total_scans = sum(qty for lots in scans_needed.values() for qty in lots.values())
-    actual_count = len(scan_inputs)
-    if actual_count != total_scans:
-        st.error(f"❌  Expected **{total_scans}** scans but received **{actual_count}**.")
-        st.stop()
-
-    processed = 0
+def get_pulltag_rows(job: str, lot: str) -> list[dict]:
     with get_db_cursor() as cur:
-        scans_by_item = {}
-        for k, sid in scan_inputs.items():
-            parts = k.split("_")
-            if len(parts) >= 3:
-                scans_by_item.setdefault(parts[2], []).append(sid.strip())
+        cur.execute("""
+            SELECT 
+                id AS pulltag_id,
+                warehouse,
+                job_number,
+                lot_number,
+                item_code,
+                description,
+                quantity AS qty_req,
+                uom,
+                cost_code,
+                status,
+                transaction_type,
+                last_updated,
+                note
+            FROM pulltags
+            WHERE job_number = %s AND lot_number = %s
+        """, (job, lot))
+        rows = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
+        return [dict(zip(columns, row)) for row in rows]
 
-        for item_code, lots in scans_needed.items():
-            scan_list = scans_by_item.get(item_code, [])
-            scan_index = 0
-            total_needed = sum(lots.values())
-            for (job, lot), need in lots.items():
-                qty = need
+def load_pulltags(job: str, lot: str, tx_type: str) -> pd.DataFrame:
+    rows = get_pulltag_rows(job, lot)
+    if not rows:
+        st.warning(f"No pull‑tags for {job}-{lot}")
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    if (df["status"] == "exported").any():
+        st.warning(f"❌ {job}-{lot} was already exported. Kitting not allowed.")
+        return pd.DataFrame()
+    if (df["status"] == "kitted").any():
+        st.warning(f"⚠️ Auto‑kitted on {pd.to_datetime(df['last_updated']).max():%Y‑%m‑%d %H:%M}")
+    df = df[df["transaction_type"] == tx_type]
+    with get_db_cursor() as cur:
+        cur.execute("SELECT item_code FROM items_master WHERE scan_required")
+        scan_set = {r[0] for r in cur.fetchall()}
+    df["scan_required"] = df["item_code"].isin(scan_set)
+    if "kitted_qty" not in df.columns:
+        df["kitted_qty"] = df["qty_req"]
+    df["note"] = df["note"].fillna("")
+    df["warehouse"] = df["warehouse"].fillna("MAIN")
+    logger.info(f"Loaded pulltags for {job}-{lot}: {df[['item_code', 'kitted_qty', 'qty_req', 'transaction_type', 'scan_required']].to_dict()}")
+    return df
 
-                cur.execute("SELECT warehouse FROM pulltags WHERE job_number = %s AND lot_number = %s AND item_code = %s LIMIT 1", (job, lot, item_code))
-                warehouse = cur.fetchone()[0]
-
-                cur.execute(f"""
-                    INSERT INTO transactions (
-                        transaction_type, date, warehouse, {loc_field},
-                        job_number, lot_number, item_code, quantity, user_id
-                    ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s)
-                """, (tx_type, warehouse, loc_value, job, lot, item_code, qty, scanned_by))
-
-                for idx in range(1, qty + 1):
-                    if scan_index >= len(scan_list):
-                        raise Exception(f"Not enough scans for {item_code}")
-                    sid = scan_list[scan_index]
-                    scan_index += 1
-
-                    validate_scan_location(cur, sid, tx_type, loc_value)
-
-                    cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Job Issue'", (sid,))
-                    issues = cur.fetchone()[0]
-                    cur.execute("SELECT COUNT(*) FROM scan_verifications WHERE scan_id = %s AND transaction_type = 'Return'", (sid,))
-                    returns = cur.fetchone()[0]
-
-                    if tx_type == "Job Issue" and issues - returns > 0:
-                        raise Exception(f"Scan {sid} already issued.")
-                    elif tx_type == "Return" and issues > 0 and returns >= issues:
-                        raise Exception(f"Scan {sid} already returned.")
-
-                    try:
-                        cur.execute("""
-                            INSERT INTO scan_verifications (
-                                item_code, scan_id, job_number, lot_number,
-                                scan_time, location, transaction_type, warehouse, scanned_by
-                            ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
-                        """, (item_code, sid, job, lot, loc_value, tx_type, warehouse, scanned_by))
-                    except IntegrityError:
-                        raise Exception(f"Duplicate scan ID '{sid}' detected")
-
-                    if tx_type == "Return":
-                        cur.execute("INSERT INTO current_scan_location (scan_id, item_code, location) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", (sid, item_code, loc_value))
-                    else:
-                        cur.execute("DELETE FROM current_scan_location WHERE scan_id = %s", (sid,))
-
-                    processed += 1
-                    if progress_callback:
-                        progress_callback(int((processed / total_scans) * 100))
-
-                cur.execute("""
-                    UPDATE pulltags
-                    SET status = %s
-                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
-                """, ('kitted' if tx_type == 'Job Issue' else 'returned', job, lot, item_code))
-
-                delta = qty if tx_type == "Return" else -qty
-                cur.execute("""
-                    INSERT INTO current_inventory (item_code, location, quantity, warehouse)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (item_code, location, warehouse) DO UPDATE
-                    SET quantity = current_inventory.quantity + EXCLUDED.quantity
-                """, (item_code, loc_value, delta, warehouse))
-
-                total_needed -= qty
-                if total_needed <= 0:
-                    break
-
-# -----------------------------------------------------------------------------
-# Main Streamlit App Entry
-# -----------------------------------------------------------------------------
-
-def run():    
+def finalise():
+    compute_scan_requirements()
     
-    st.title("📦 Job Kitting")
-    if st.button("🔄 Reset Page"):
-        for key in ["job_lot_queue", "kitting_inputs", "scan_buffer","scan_live"]:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
-     
-    tx_type = st.selectbox(
-        "Transaction Type",
-        ["Issue", "Return"],
-        help="Select 'Issue' to pull stock from this location, or 'Return' to credit it here."
+    needs_scans = any(
+        r.get("scan_required", False)
+        for df in st.session_state.pulltag_editor_df.values()
+        for _, r in df.iterrows()
     )
-    location = st.text_input(
-        "Location",
-        help="If Issue: this is your from_location; if Return: this is your to_location."
-    ).strip()
-
-    if 'job_lot_queue' not in st.session_state:
-        st.session_state.job_lot_queue = []
-    if 'kitting_inputs' not in st.session_state:
-        st.session_state.kitting_inputs = {}
-
-    with st.form("add_joblot", clear_on_submit=True):
-        job = st.text_input("Job Number")
-        lot = st.text_input("Lot Number")
-        if st.form_submit_button("Add Job/Lot"):
-            if job and lot:
-                pair = (job.strip(), lot.strip())
-                if pair not in st.session_state.job_lot_queue:
-                    st.session_state.job_lot_queue.append(pair)
-                else:
-                    st.warning("This Job/Lot is already queued.")
-            else:
-                st.error("Both Job Number and Lot Number are required.")
-
-    for job, lot in st.session_state.job_lot_queue:
-        st.markdown(f"---\n**Job:** {job} | **Lot:** {lot}")
-
-        if st.button(f"Remove {lot}", key=f"remove_{job}_{lot}"):
-            st.session_state.job_lot_queue = [p for p in st.session_state.job_lot_queue if p != (job, lot)]
-            st.rerun()
-
-        st.markdown("### ➕ Add New Kitted Item")
-        with st.form(f"add_new_line_{job}_{lot}", clear_on_submit=True):
-            new_code = st.text_input(
-                "Item Code", 
-                placeholder="Scan or type item_code",
-                key=f"new_code_{job}_{lot}"
-            )
-            new_qty = st.number_input(
-                "Quantity Kitted", 
-                min_value=1, 
-                step=1,
-                key=f"new_qty_{job}_{lot}"
-            )
-            add_clicked = st.form_submit_button("Add Item")
-
-        if add_clicked:
-            inserted = False
-            with get_db_cursor() as cur:
-                cur.execute(
-                    "SELECT item_description FROM items_master WHERE item_code = %s",
-                    (new_code,)
-                )
-                row = cur.fetchone()
-                if row:
-                    adjusted_qty = -abs(new_qty) if tx_type == "Return" else new_qty
-                    insert_pulltag_line(
-                        cur,
-                        job,
-                        lot,
-                        new_code,
-                        adjusted_qty,
-                        location,
-                        transaction_type="Job Issue" if tx_type == "Issue" else "Return",
-                        note="Updated"
-                    )
-                    inserted = True
-            if not inserted:
-                st.error(f"`{new_code}` not found in items_master!")
-            else:
-                st.success(f"Added {new_qty} × `{new_code}` to {job}-{lot}.")
-                st.rerun()
-
-        rows = [r for r in get_pulltag_rows(job, lot) if r['transaction_type'] in ('Job Issue', 'Return')]
-
-        if not rows:
-            st.info("No pull-tags found for this combination.")
-            continue
-
-        # Only block edits if it's an Issue and the job/lot is already kitted/processed
-        if tx_type == "Issue" and any(r['status'] in ('kitted', 'exported') for r in rows):
-            st.warning(f"Job {job}, Lot {lot} is locked from Issue edits (status: kitted/exported).")
-            continue
-
-        with st.container():
-            cols = st.columns([1, 3, 1, 1, 1, 1, 1])
-            for col, hdr in zip(cols, headers):
-                col.markdown(f"**{hdr}**")
-            #
-        MAX_PULLTAGS = 30
-        visible_rows = rows[-MAX_PULLTAGS:]
-        if len(rows) > MAX_PULLTAGS:
-            st.info(f"Showing last {MAX_PULLTAGS} of {len(rows)} pulltags.")
-
-        headers = ["Code", "Desc", "Req", "UOM", "Kit", "Cost Code", "Status"]
-        with st.container():
-            cols = st.columns([1, 3, 1, 1, 1, 1, 1])
-            for col, hdr in zip(cols, headers):
-                col.markdown(f"**{hdr}**")
-
-            for row in visible_rows:
-                cols = st.columns([1, 3, 1, 1, 1, 1, 1])
-                cols[0].write(row['item_code'])
-                cols[1].write(row['description'])
-                cols[2].write(row['qty_req'])
-                cols[3].write(row['uom'])
-
-                key = f"kit_{job}_{lot}_{row['item_code']}_{row['id']}"
-                min_qty = -999 if tx_type == "Return" else 0
-                default = max(row['qty_req'], min_qty)
-
-                if st.checkbox(f"Edit Qty", key=f"edit_{job}_{lot}_{row['id']}", value=False):
-                    st.session_state.kitting_inputs[key] = cols[4].number_input(
-                        label="Kit Qty",
-                        min_value=min_qty,
-                        max_value=999,
-                        value=st.session_state.kitting_inputs.get(key, default),
-                        key=key,
-                        label_visibility="collapsed"
-                    )
-                else:
-                    cols[4].write(st.session_state.kitting_inputs.get(key, default))
-
-                cols[5].write(row['cost_code'])
-                cols[6].write(row['status'])
-
-        if st.button(f"Submit Kitting for {job}-{lot}", key=f"submit_{job}_{lot}"):
-
-            kits = {}
-            for k, qty in st.session_state.kitting_inputs.items():
-                if isinstance(k, str) and k.startswith("kit_"):
-                    parts = k.split("_")
-                    if len(parts) >= 5:
-                        _, j, l, code, pid = parts
-                        if j == job and l == lot:
-                            kits[(j, l, code, pid)] = qty  # treat pulltag ID as string, not int
-
-            with get_db_cursor() as cur:
-                existing = [r['item_code'] for r in rows]
-
-                for (j, l, code, pid), qty in kits.items():
-                    if code not in existing and qty != 0:
-                        adjusted_qty = -abs(qty) if tx_type == "Return" else abs(qty)
-                        insert_pulltag_line(cur, job, lot, code, adjusted_qty, transaction_type="Job Issue" if tx_type == "Issue" else "Return", note="Updated")
-
-                for r in rows:
-                    new_qty = kits.get((job, lot, r['item_code'], r['id']), r['qty_req'])
-                    adjusted_qty = -abs(new_qty) if tx_type == "Return" else new_qty
-                    if adjusted_qty == 0 and r['status'] != 'returned' and r['transaction_type'] != 'RETURNB':
-                        delete_pulltag_line(cur, r['id'])
-
-                    elif adjusted_qty != r['qty_req']:
-                        update_pulltag_line(cur, r['id'], adjusted_qty)
-
-                bulk_status = "kitted" if tx_type == "Issue" else "returned"
-
-                cur.execute("""
-                    UPDATE pulltags
-                    SET status = %s
-                    WHERE job_number = %s
-                      AND lot_number = %s
-                      AND transaction_type = %s
-                      AND status NOT IN ('kitted', 'returned')
-                """, (
-                    bulk_status,
-                    job,
-                    lot,
-                    "Job Issue" if tx_type == "Issue" else "Return"
-                ))        
-                        
-                st.success(f"Kitting updated for {job}-{lot}.")
-                            
-    scans_needed = {}
-    for job, lot in st.session_state.job_lot_queue:
-        with get_db_cursor() as cur:
-            cur.execute(
-                """
-                SELECT p.item_code, p.quantity
-                FROM pulltags p
-                JOIN items_master im ON p.item_code = im.item_code
-                WHERE p.job_number = %s
-                  AND p.lot_number = %s
-                  AND im.scan_required = TRUE
-                  AND p.transaction_type IN ('Job Issue', 'Return')  -- exclude ADD, RETURNB
-
-                """,
-                (job, lot)
-            )
-            for item_code, qty in cur.fetchall():
-                scans_needed.setdefault(item_code, {}).setdefault((job, lot), 0)
-                scans_needed[item_code][(job, lot)] += abs(qty)
-
-    MAX_SCAN_DISPLAY = 20
-    st.markdown("---")
-    st.subheader("🔍 Live Scan Buffer")
-
-    # Init scan buffer if not present
-    if "scan_buffer" not in st.session_state:
-        st.session_state.scan_buffer = []
     
-    # Ensure buffer only contains valid 4-tuples
-    st.session_state.scan_buffer = [
-        entry for entry in st.session_state.scan_buffer
-        if isinstance(entry, tuple) and len(entry) == 4
-    ]
+    if needs_scans and not st.session_state.scans_valid:
+        st.error("Please validate scans first - click Validate Scans and fix any errors. ")
+        return
     
-    # Safely count matching scans
-    next_item = None
-    for item_code, job_lots in scans_needed.items():
-        total_needed = sum(job_lots.values())
-        total_scanned = len([
-            sid for entry in st.session_state.scan_buffer
-            for job, lot, code, sid in [entry]
-            if code == item_code
-        ])
-        if total_scanned < total_needed:
-            next_item = item_code
-            remaining = total_needed - total_scanned
-            break
-        
-    # UI toggle
-    st.markdown(f"<div id='{EDIT_ANCHOR}'></div>", unsafe_allow_html=True)
-    edit_mode = st.toggle("✏️ Edit Scan Entries", value=False)
-    
-    # Editable Table View
-    if edit_mode:
-        st.subheader("✏️ Edit Scans Before Verifying")
-        for i, (job, lot, item_code, sid) in enumerate(st.session_state.scan_buffer):
-            cols = st.columns([1, 2, 2])
-            cols[0].write(item_code)
-            new_sid = cols[1].text_input(f"Scan {i+1}", value=sid, key=f"edit_scan_{i}")
-            if cols[2].button("❌ Remove", key=f"remove_scan_{i}"):
-                st.session_state.scan_buffer.pop(i)
-                st.rerun()
-            else:
-                st.session_state.scan_buffer[i] = (job, lot, item_code, new_sid.strip())
-    
-    else:
-        # Guided Scan UI
-        if next_item:
-            st.markdown(f"### 🔄 Scan item: **`{next_item}`** ({remaining} remaining)")
-        else:
-            st.success("✅ All required scans collected.")
-    
-        def commit_scan_guided():
-            val = st.session_state.scan_live.strip()
-            if val and next_item:
-                if st.session_state.job_lot_queue:
-                    job, lot = st.session_state.job_lot_queue[0]
-                else:
-                    job, lot = "UNK", "UNK"
-                
-                st.session_state.scan_buffer.append((job, lot, next_item, val))
+    for df in st.session_state.pulltag_editor_df.values():
+        bad = df[(df["transaction_type"] != "Return") & (df["kitted_qty"] < 0)]
+        if not bad.empty:
+            st.error("Negative qty only allowed on Return lines.")
+            return
 
-                st.session_state.scan_live = ""
-    
-        st.text_input("📷 Scan Item Here", key="scan_live", on_change=commit_scan_guided)
-    
-        if st.session_state.scan_buffer:
-            st.caption("Recent scans:")
-            for idx, (_, _, item_code, sid) in enumerate(st.session_state.scan_buffer[-10:], 1):
-                st.text(f"{idx}. {item_code} → {sid}")
-    
-        # Finalize Scans only if not editing
-        if st.button("✅ Verify Scans"):
-            if not location:
-                st.error("Please enter a Location before verifying.")
-            else:
-                scan_inputs = {}
-                for idx, (job, lot, item_code, sid) in enumerate(st.session_state.scan_buffer, 1):
-                    scan_inputs[f"{job}_{lot}_{item_code}_{idx}"] = sid
-    
-                sb = st.session_state.get("user","unknown")
-                progress_bar = st.progress(0)
-                with st.spinner("Processing scans…"):
-                    def update_progress(pct: int):
-                        progress_bar.progress(pct)
-                    try:
-                        
-                        if tx_type == "Issue":
-                            finalize_scans(
-                                scans_needed,
-                                scan_inputs,
-                                st.session_state.job_lot_queue,
-                                from_location=location,
-                                to_location=None,
-                                scanned_by=sb,
-                                progress_callback=update_progress
-                            )
-                        else:
-                            finalize_scans(
-                                scans_needed,
-                                scan_inputs,
-                                st.session_state.job_lot_queue,
-                                from_location=None,
-                                to_location=location,
-                                scanned_by=sb,
-                                progress_callback=update_progress
-                            )
-                    except Exception as e:
-                        #Friendly banner + link that scrolls the user back to the edit box
-                        st.error(
-                            f"❌ {e}  \n\n"
-                            f"[➡️ Jump to **Edit Scan Entries**](#{EDIT_ANCHOR})"
-                        )
-                        # forces the browser to respect the anchor even if the banner is low down
-                        st.experimental_set_query_params(anchor=EDIT_ANCHOR)
-                        st.stop()
-                            
-                st.success("Scans verified and inventory updated.")
-               
-                item_map = {}
-                with get_db_cursor() as cur:
-                    cur.execute("SELECT item_code, item_description FROM items_master")
-                    item_map = dict(cur.fetchall())
+    summaries, tx, scans, inv, upd, dels, note_upd, qty_upd = [], [], [], [], [], [], [], []
+    sb = st.session_state.scan_buffer
+    missing_notes = []
 
-                # Create lookup from scan_buffer
-                scan_map = {
-                    (j, l, code): sid
-                    for j, l, code, sid in st.session_state.scan_buffer
-                }
-                
-                # Build a list of rows: one per scan_id
-               # summary_rows = []
-                #for (job, lot, item_code, scan_id) in st.session_state.scan_buffer:
-                 #   for r in get_pulltag_rows(job, lot):
-                  #      if r["item_code"] == item_code and r["transaction_type"] in ("Job Issue", "Return"):
-                   #         summary_rows.append({
-                    #            "job_number": r["job_number"],
-                     #           "lot_number": r["lot_number"],
-                      #          "item_code": r["item_code"],
-                       #         "item_description": r["description"],
-                        #        "scan_id": scan_id,
-                         #       "qty": 1
-                          #  })
+    for (job, lot), df in st.session_state.pulltag_editor_df.items():
+        for _, row in df.iterrows():
+            if row["kitted_qty"] != row["qty_req"] and (not row["note"] or row["note"].strip().lower() == "imported"):
+                missing_notes.append(f"{job}-{lot}-{row['item_code']}")
 
-                #Summary Rows for all items including non-scanned
-                pulls = get_pulltag_rows(job, lot)
-                scan_lookup = {}
-                for j, l, code, sid in st.session_state.scan_buffer:
-                    scan_lookup.setdefault((j, l, code), []).append(sid)
-                 
-                summary_rows = []
-                for r in pulls:
-                    if r["transaction_type"] not in ("Job Issue", "Return"):
+    if missing_notes:
+        logger.warning(f"Blocked finalization due to missing notes: {missing_notes}")
+        st.warning(f"📝 Notes required for items with changed quantity: {', '.join(missing_notes)}")
+        return
+
+    try:
+        with get_db_cursor() as cur, cur.connection:
+            item_scan_map = defaultdict(list)
+            for j, l, ic, sid in sb:
+                item_scan_map[(j, ic)].append(sid)
+
+            distributed_scans = defaultdict(list)
+            for (job, item_code), scans_for_item in item_scan_map.items():
+                total_needed = 0
+                for (lot_k, df_k) in st.session_state.pulltag_editor_df.items():
+                    if lot_k[0] == job and item_code in df_k["item_code"].values:
+                        total_needed += int(df_k[df_k["item_code"] == item_code]["kitted_qty"].iloc[0])
+                if len(set(scans_for_item)) != abs(total_needed):
+                    raise ScanMismatchError(f"{job}-{item_code}: need {abs(total_needed)} scans, got {len(set(scans_for_item))}.")
+
+                scan_queue = list(dict.fromkeys(scans_for_item))
+
+                for (lot_k, df_k) in st.session_state.pulltag_editor_df.items():
+                    if lot_k[0] != job:
                         continue
-                    key = (r["job_number"], r["lot_number"], r["item_code"])
-                    sid_list = scan_lookup.get(key, [])
-                 
-                    if sid_list:                               # one row *per* scan
-                        for sid in sid_list:
-                            summary_rows.append({
-                                "job_number": r["job_number"],
-                                "lot_number": r["lot_number"],
-                                "item_code": r["item_code"],
-                                "item_description": r["description"],
-                                "scan_id": sid,
-                                "qty": 1
-                            })
-                    else:                                      # single row for non-scanned line
-                        summary_rows.append({
-                            "job_number": r["job_number"],
-                            "lot_number": r["lot_number"],
-                            "item_code": r["item_code"],
-                            "item_description": r["description"],
-                            "scan_id": "- not scanned -",
-                            "qty": abs(r["qty_req"])
-                        })
-                #Generate PDF using full pulltag data
-                generate_finalize_summary_pdf(
-                    summary_rows,
-                    verified_by=sb,
-                    verified_on=datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
-                )
+                    for idx, row in df_k[df_k["item_code"] == item_code].iterrows():
+                        qty = int(row["kitted_qty"])
+                        assigned = scan_queue[:abs(qty)]
+                        distributed_scans[(lot_k[0], lot_k[1], item_code)] = assigned
+                        scan_queue = scan_queue[abs(qty):]
 
-                summary_path = os.path.join(tempfile.gettempdir(), "final_scan_summary.pdf")
-                if os.path.exists(summary_path):
-                    st.success("✅ Scan summary ready! You can download the PDF below.")
-                    with open(summary_path, "rb") as f:
-                        st.download_button(
-                            label="📄 Download Final Scan Summary",
-                            data=f,
-                            file_name="final_scan_summary.pdf",
-                            mime="application/pdf"
-                        )
+            for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                for _, r in df.iterrows():
+                    ic, qty, tx_type = r["item_code"], int(r["kitted_qty"]), r["transaction_type"]
+                    wh, loc = r["warehouse"], st.session_state.location
+                    scan_required = r.get("scan_required", False)
+
+                    sc = distributed_scans.get((job, lot, ic), [])
+
+                    qty_abs = abs(qty)
+                    if scan_required:
+                        tx.append((tx_type, wh, loc, job, lot, ic, qty, st.session_state.user))
+                        inv_delta = -qty_abs if tx_type == "Job Issue" else qty_abs
+                        inv.append((ic, loc, inv_delta, wh))
+
+                    for sid in sc:
+                        validate_scan_location(cur, sid, tx_type, expected_location=loc, expected_item_code=ic)
+                        scans.append((ic, sid, job, lot, loc, tx_type, wh, st.session_state.user))
+                        summaries.append({
+                            "job_number": job, "lot_number": lot, "item_code": ic,
+                            "item_description": r.get("description", ""), "scan_id": sid, "qty": 1
+                        })
+                    if not sc:
+                        summaries.append({
+                            "job_number": job, "lot_number": lot, "item_code": ic,
+                            "item_description": r.get("description", ""), "scan_id": None, "qty": qty_abs
+                        })
+
+                    upd.append(("kitted" if tx_type == "Job Issue" else "returned", job, lot, ic))
+                    if r["note"]:
+                        note_upd.append((r["note"], job, lot, ic))
+                        qty_upd.append((qty, job, lot, ic))
+
+            if tx:
+                for d in tx:
+                    if d[0] == "Job Issue":
+                        cur.execute("""
+                            INSERT INTO transactions (transaction_type, date, warehouse, from_location, job_number, lot_number, item_code, quantity, user_id)
+                            VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)
+                        """, d)
+                    else:
+                        cur.execute("""
+                            INSERT INTO transactions (transaction_type, date, warehouse, to_location, job_number, lot_number, item_code, quantity, user_id)
+                            VALUES (%s,NOW(),%s,%s,%s,%s,%s,%s,%s)
+                        """, d)
+
+            if scans:
+                cur.executemany("""
+                    INSERT INTO scan_verifications (item_code, scan_id, job_number, lot_number, scan_time, location, transaction_type, warehouse, scanned_by)
+                    VALUES (%s,%s,%s,%s,NOW(),%s,%s,%s,%s)
+                """, scans)
+
+            if inv:
+                cur.executemany("""
+                    INSERT INTO current_inventory (item_code, location, quantity, warehouse)
+                    VALUES (%s,%s,%s,%s)
+                    ON CONFLICT (item_code, location, warehouse)
+                    DO UPDATE SET quantity = current_inventory.quantity + EXCLUDED.quantity
+                """, inv)
+
+            if upd:
+                cur.executemany("""
+                    UPDATE pulltags SET status=%s, last_updated=NOW()
+                    WHERE job_number=%s AND lot_number=%s AND item_code=%s
+                """, upd)
+
+            if note_upd:
+                cur.executemany("""
+                    UPDATE pulltags SET note=%s, last_updated=NOW()
+                    WHERE job_number=%s AND lot_number=%s AND item_code=%s
+                """, note_upd)
+
+            if qty_upd:
+                cur.executemany("""
+                    UPDATE pulltags SET quantity = %s, last_updated = NOW()
+                    WHERE job_number = %s AND lot_number = %s AND item_code = %s
+                """, qty_upd)
+
+            if dels:
+                cur.executemany("""
+                    DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s
+                """, dels)
+
+            cur.connection.commit()
+
+    except Exception as e:
+        st.error("❌ Finalization failed. Please check your scan counts, lot state, or try again. Error logged.")
+        logger.exception("Finalisation failed")
+        return
+
+    pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
+        datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
+
+    st.download_button("📄 Download Final Scan Summary", pdf, file_name="final_scan_summary.pdf", mime="application/pdf")
+    finalized_lots = list(st.session_state.pulltag_editor_df.keys())
+    logger.info(f"Finalized and archived: {finalized_lots}")
+
+    st.session_state.scan_buffer.clear()
+    st.session_state.pulltag_editor_df.clear()
+    st.session_state.locked = False
+    st.success("✅ Finalization complete. All pulltags archived from editor.")
+
+def run():
+    bootstrap_state()
+    st.title("📦 Multi-Lot Job Kitting")
+    
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        job = st.text_input("Job Number", key="job_input")
+    with col2:
+        lot = st.text_input("Lot Number", key="lot_input")
+    with col3:
+        tx_type = st.selectbox("Transaction Type", ["Job Issue", "Return"], index=0, key="tx_type_choice")
+        
+        if st.button("➕ Load Pull‑Tags"):
+            if not (validate_alphanum(job, "Job Number") and validate_alphanum(lot, "Lot Number")):
+                return
+            df = load_pulltags(job, lot, tx_type)
+            if not df.empty:
+                st.session_state.pulltag_editor_df[(job, lot)] = df
+                st.session_state.scans_valid = False # Reset flag when new lot loads
+                
+    loc_input = st.text_input("Staging Location", value=st.session_state.location or "")
+    st.session_state.location = loc_input
+    
+    if loc_input:
+        with get_db_cursor() as cur:
+            cur.execute("SELECT 1 FROM locations WHERE location_code = %s", (loc_input,))
+            if not cur.fetchone():
+                st.warning(f"⚠️ Location '{loc_input}' not found in system. Please verify or add it first.")
+    lock_btn_text = "🔓 Unlock Quantities" if st.session_state.locked else "✔️ Lock Quantities"
+    with st.form("lock_quantities_form"):
+        submitted = st.form_submit_button(lock_btn_text)
+        if submitted:
+            # Flip the lock flag
+            st.session_state.locked = not st.session_state.locked
+            # Every toggle invalidates earlier scan CHECKS
+            st.session_state.scans_valid = False #force revalidate after lock toggle
+            
+            if not st.session_state.locked:
+                # Unlock
+                st.info("Quantities unlocked — please run Validate Scans again before finalizing.")
+               
+            else:
+                #-----LOCK-----
+                compute_scan_requirements() # refresh after edits
+                logger.info(
+                    "[LOCK] item_requirements → %s",
+                    st.session_state.item_requirements)
+
+                
+                st.success("Quantities locked. Scanning enabled.")
+                
+                logger.info(f"Locked quantities. pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
+    session_label_default = f"{st.session_state.user} – Kit @ {datetime.now().strftime('%H:%M')}"
+    session_label = st.text_input("📝 Session Label (optional)", value=session_label_default)
+    compute_scan_requirements()
+    if st.button("📂 Save Progress"):
+        snapshot = {
+            "pulltag_editor_df": {
+                f"{k[0]}|{k[1]}": df.copy().astype(object).applymap(
+                    lambda v: v.isoformat() if isinstance(v, (datetime, pd.Timestamp)) else v
+                ).to_dict()
+                for k, df in st.session_state.pulltag_editor_df.items()
+            },
+            "scan_buffer": st.session_state.scan_buffer,
+            "locked": st.session_state.locked,
+        }
+        logger.info(f"Saving session with pulltag_editor_df: {snapshot['pulltag_editor_df'].keys()}")
+        with get_db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO kitting_sessions (session_id, user_id, data, label, expires_at)
+                VALUES (%s, %s, %s, %s, NOW() + INTERVAL '48 hours')
+                ON CONFLICT (session_id) DO UPDATE
+                SET data = EXCLUDED.data, label = EXCLUDED.label, saved_at = NOW(), expires_at = EXCLUDED.expires_at
+            """, (
+                st.session_state.session_id,
+                st.session_state.user,
+                json.dumps(snapshot),
+                session_label
+            ))
+        st.success("📂 Progress saved to database.")
+    with get_db_cursor() as cur:
+        cur.execute("""
+            SELECT session_id, label, saved_at
+            FROM kitting_sessions
+            WHERE user_id = %s AND (expires_at IS NULL OR expires_at > NOW())
+            ORDER BY saved_at DESC
+            LIMIT 10
+        """, (st.session_state.user,))
+        sessions = cur.fetchall()
+    if sessions:
+        session_options = {
+            f"{label} ({saved_at.strftime('%Y-%m-%d %H:%M')})": sid
+            for sid, label, saved_at in sessions
+        }
+        selected = st.selectbox("📂 Resume or Delete a Saved Session", options=list(session_options.keys()))
+        col1, col2 = st.columns([1, 1])
+    
+        with col1:
+            if selected and st.button("🔁 Load Selected Session"):
+                sid = session_options[selected]
+                with get_db_cursor() as cur:
+                    cur.execute("SELECT data FROM kitting_sessions WHERE session_id = %s", (sid,))
+                    row = cur.fetchone()
+                if row:
+                    saved = row[0]
+                    st.session_state.pulltag_editor_df = {
+                        tuple(k.split("|")): pd.DataFrame(v)
+                        for k, v in saved["pulltag_editor_df"].items()
+                    }
+                    st.session_state.scan_buffer = saved["scan_buffer"]
+                    st.session_state.locked = saved["locked"]
+                    st.success(f"Session '{selected}' restored.")
+                    logger.info(f"Restored session: pulltag_editor_df: {[(k, df[['item_code', 'kitted_qty']].to_dict()) for k, df in st.session_state.pulltag_editor_df.items()]}")
+    
+        with col2:
+            if selected and st.button("🗑️ Delete This Session"):
+                sid = session_options[selected]
+                with get_db_cursor() as cur:
+                    cur.execute("DELETE FROM kitting_sessions WHERE session_id = %s", (sid,))
+                st.success(f"Session '{selected}' deleted.")
+                st.rerun()
+    else:
+        st.info("No saved sessions found. Save your work to see it here.")
+
+    if st.session_state.locked:
+        with st.expander("🔍 Scan Input"):
+            render_scan_inputs()
+            if st.session_state.scan_buffer:
+                st.markdown("### 📋 Scan Buffer")
+                st.table(pd.DataFrame(st.session_state.scan_buffer, columns=["Job", "Lot", "Item", "Scan ID"]))
+                if st.button("🧹 Clear Scan Buffer"):
+                    st.session_state.scan_buffer.clear()
+                    st.success("Scan buffer cleared.")
+    # ─── Pull‑Tag Editors (Refactored) ─────────────────────────────────────────────────────
+    for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
+        st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
+        col1, col2 = st.columns([6, 1])
+    
+        with col1:
+            form_key = f"{EDIT_ANCHOR}_form_{job}_{lot}"
+            with st.form(form_key):
+                editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
+                edited_df = st.data_editor(
+                    df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
+                    key=editor_key,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    disabled=st.session_state.locked,
+                    column_config={
+                        "item_code": st.column_config.TextColumn("Item Code", disabled=True),
+                        "description": st.column_config.TextColumn("Description", disabled=True),
+                        "qty_req": st.column_config.NumberColumn("Qty Required", disabled=True),
+                        "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
+                        "note": st.column_config.TextColumn("Notes"),
+                    }
+                )
+                submitted = st.form_submit_button("📂 Apply Changes")
+                if submitted:
+                    original = st.session_state.pulltag_editor_df.get((job, lot))
+                    st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
+                    if original is not None:
+                        for col in ["scan_required", "transaction_type", "warehouse", "qty_req"]:
+                            if col in original.columns:
+                                st.session_state.pulltag_editor_df[(job, lot)][col] = original[col]
+                    
+
+                    compute_scan_requirements()
+                    st.success(f"Changes for `{job}-{lot}` saved.")
+                    logger.info(f"[REPLACED DF] {job}-{lot}: {edited_df[['item_code', 'kitted_qty']].to_dict()}")
+    
+        with col2:
+            if st.button(f"❌ Remove `{job}-{lot}`", key=f"remove_{job}_{lot}"):
+                del st.session_state.pulltag_editor_df[(job, lot)]
+
+    if not st.session_state.locked:
+        st.warning("🔒 Lock quantities before finalizing.")
+    else:
+        if st.button("✅ Finalize Kitting"):
+            finalise()
