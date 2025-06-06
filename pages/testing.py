@@ -113,7 +113,13 @@ def render_scan_inputs():
     if st.button("✅ Validate Scans"):
         st.session_state.scan_buffer.clear()
         errors = []
-
+        if errors:
+            st.session_state.scans_valid = False
+            st.session_state.scan_buffer.clear()   # discard partials
+            st.error("❌ Scan validation errors:\n" + "\n".join(errors))
+        else:
+            st.session_state.scans_valid = True
+            st.success("✅ All scans validated and assigned.")
         with get_db_cursor() as cur:
             for item_code, expected_qty in item_requirements.items():
                 scans = new_scan_map[item_code]
@@ -184,6 +190,7 @@ def bootstrap_state():
         "user": st.user.get("username", "unknown"),
         "confirm_kitting": False,
         "locked": False,
+        "scan_valid": False,
     }
     for k, v in base.items():
         st.session_state.setdefault(k, v)
@@ -212,7 +219,7 @@ def get_pulltag_rows(job: str, lot: str) -> list[dict]:
         columns = [desc[0] for desc in cur.description]
         return [dict(zip(columns, row)) for row in rows]
 
-def load_pulltags(job: str, lot: str) -> pd.DataFrame:
+def load_pulltags(job: str, lot: str, tx_type: str) -> pd.DataFrame:
     rows = get_pulltag_rows(job, lot)
     if not rows:
         st.warning(f"No pull‑tags for {job}-{lot}")
@@ -223,7 +230,7 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
         return pd.DataFrame()
     if (df["status"] == "kitted").any():
         st.warning(f"⚠️ Auto‑kitted on {pd.to_datetime(df['last_updated']).max():%Y‑%m‑%d %H:%M}")
-    df = df[df["transaction_type"].isin(["Job Issue", "Return"])]
+    df = df[df["transaction_type"] == tx_type]
     with get_db_cursor() as cur:
         cur.execute("SELECT item_code FROM items_master WHERE scan_required")
         scan_set = {r[0] for r in cur.fetchall()}
@@ -236,6 +243,18 @@ def load_pulltags(job: str, lot: str) -> pd.DataFrame:
     return df
 
 def finalise():
+    #make sure requirements are current
+    compute_scan_requirements()
+    #do any rows still require scans?
+    need_scans = any(
+        r.get("scan_required", False)
+        for df in st.session_state.pulltag_editor_df.values()
+        for _, r in df.iterrows()
+    )
+    if needs_scans and not st.session_state.scans_valid:
+        st.error("Please validate scans first - click "Validate Scans" and fix any errors. ")
+        return
+    
     for df in st.session_state.pulltag_editor_df.values():
         bad = df[(df["transaction_type"] != "Return") & (df["kitted_qty"] < 0)]
         if not bad.empty:
@@ -392,10 +411,17 @@ def run():
     with col2:
         lot = st.text_input("Lot Number", key="lot_input")
     with col3:
+      tx_type = st.selectbox(
+            "Transaction Type",
+            ["Job Issue", "Return"],
+            index=0,            # default = Job Issue
+            key="tx_type_choice"
+        )
+
         if st.button("➕ Load Pull‑Tags"):
             if not validate_alphanum(job, "Job Number") or not validate_alphanum(lot, "Lot Number"):
                 return
-            df = load_pulltags(job, lot)
+            df = load_pulltags(job, lot, tx_type)
             if not df.empty:
                 st.session_state.pulltag_editor_df[(job, lot)] = df
     loc_input = st.text_input("Staging Location", value=st.session_state.location or "")
