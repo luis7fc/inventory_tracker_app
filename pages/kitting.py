@@ -224,13 +224,16 @@ def load_pulltags(job: str, lot: str, tx_type: str) -> pd.DataFrame:
     if not rows:
         st.warning(f"No pull‑tags for {job}-{lot}")
         return pd.DataFrame()
+
     df = pd.DataFrame(rows)
+    df = df[df["transaction_type"] == tx_type]
+
     if (df["status"] == "exported").any():
-        st.warning(f"❌ {job}-{lot} was already exported. Kitting not allowed.")
+        st.warning(f"❌ {job}-{lot} ({tx_type}) was already exported. Kitting not allowed.")
         return pd.DataFrame()
     if (df["status"] == "kitted").any():
-        st.warning(f"⚠️ Auto‑kitted on {pd.to_datetime(df['last_updated']).max():%Y‑%m‑%d %H:%M}")
-    df = df[df["transaction_type"] == tx_type]
+        st.warning(f"⚠️ {job}-{lot} ({tx_type}) was auto-kitted on {pd.to_datetime(df['last_updated']).max():%Y‑%m‑%d %H:%M}")
+
     with get_db_cursor() as cur:
         cur.execute("SELECT item_code FROM items_master WHERE scan_required")
         scan_set = {r[0] for r in cur.fetchall()}
