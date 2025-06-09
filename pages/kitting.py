@@ -354,6 +354,31 @@ def finalise():
                     INSERT INTO scan_verifications (item_code, scan_id, job_number, lot_number, scan_time, location, transaction_type, warehouse, scanned_by)
                     VALUES (%s,%s,%s,%s,NOW(),%s,%s,%s,%s)
                 """, scans)
+                
+            # ─── Update current_scan_location ──────────────────────────────────────────
+            return_inserts = []
+            job_issue_removals = []
+            
+            for ic, sid, job, lot, loc, tx_type, wh, user in scans:
+                if tx_type == "Return":
+                    return_inserts.append((sid, ic, loc, wh))
+                elif tx_type == "Job Issue":
+                    job_issue_removals.append(sid)
+            
+            # Bulk insert new returns
+            if return_inserts:
+                cur.executemany("""
+                    INSERT INTO current_scan_location (scan_id, item_code, location, warehouse)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (scan_id) DO NOTHING
+                """, return_inserts)
+            
+            # Bulk delete issued scans
+            if job_issue_removals:
+                cur.execute("""
+                    DELETE FROM current_scan_location
+                    WHERE scan_id = ANY(%s)
+                """, (job_issue_removals,))
 
             if inv:
                 cur.executemany("""
