@@ -140,7 +140,7 @@ def insert_pulltag_line(cur, job, lot, code, qty, loc, tx_type, note, warehouse_
 # FINALIZE SCANS – DELEGATES TO MODULAR HELPERS
 # ─────────────────────────────────────────────
 
-def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, note, input_tx, warehouse_sel, progress_cb=None):
+def finalize_scan_items(adjustments, scans_needed, scan_inputs, *, from_loc, to_loc, user, note, input_tx, warehouse_sel, progress_cb=None):
     if progress_cb is None:
         progress_cb = lambda *_: None
 
@@ -148,15 +148,15 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, no
 
     scan_map = defaultdict(list)
     errors = []
-    for code, lots in scans_needed.items():
-        for (job, lot), qty in lots.items():
-            for i in range(1, qty + 1):
-                key = f"scan_{code}_{job}_{lot}_{i}"
-                sid = scan_inputs.get(key, "").strip()
-                if not sid:
-                    errors.append(f"Missing scan {i} for {code} — Job {job} / Lot {lot}.")
-                else:
-                    scan_map[(code, job, lot)].append(sid)
+    for row_idx, row in enumerate(adjustments):
+        code, job, lot, qty = row["code"], row["job"], row["lot"], row["qty"]
+        for i in range(1, qty + 1):
+            key = f"scan_{code}_{job}_{lot}_{i}_row{row_idx}"
+            sid = scan_inputs.get(key, "").strip()
+            if not sid:
+                errors.append(f"Missing scan {i} for {code} — Job {job} / Lot {lot}.")
+            else:
+                scan_map[(code, job, lot)].append(sid)
 
     duplicates = [s for s, c in Counter([s for v in scan_map.values() for s in v]).items() if c > 1]
     if duplicates:
@@ -222,15 +222,15 @@ def finalize_scan_items(scans_needed, scan_inputs, *, from_loc, to_loc, user, no
 
 preview = []  # used to hold preview results across runs
 
-def preview_scan_validity(scans_needed, scan_inputs, from_loc, to_loc, input_tx):
+def preview_scan_validity(adjustments, scans_needed, scan_inputs, from_loc, to_loc, input_tx):
     from collections import defaultdict
     results = []
 
     with get_db_cursor() as cur:
-        for code, lots in scans_needed.items():
-            for (job, lot), qty in lots.items():
+            for row_idx, row in enumerate(adjustments):
+                code, job, lot, qty = row["code"], row["job"], row["lot"], row["qty"]
                 for i in range(1, qty + 1):
-                    key = f"scan_{code}_{job}_{lot}_{i}"
+                    key = f"scan_{code}_{job}_{lot}_{i}_row{row_idx}"
                     sid = scan_inputs.get(key, "").strip()
                     if not sid:
                         results.append({
@@ -263,11 +263,11 @@ def preview_scan_validity(scans_needed, scan_inputs, from_loc, to_loc, input_tx)
                         })
     return results
 
-
 def show_scan_preview(adjustments, scan_inputs, location, tx_input):
     scans_needed = {row["code"]: {(row["job"], row["lot"]): row["qty"]}
                     for row in adjustments if row["scan_required"]}
     preview = preview_scan_validity(
+        adjustments,
         scans_needed,
         scan_inputs,
         from_loc=location if tx_input == "ADD" else "",
@@ -356,14 +356,14 @@ def run():
 
     if adjustments and any(r["scan_required"] for r in adjustments):
         st.markdown("### 🔍 Enter Scan IDs")
-        for row in adjustments:
+        for idx, row in enumerate(adjustments):
             if row["scan_required"]:
                 for i in range(1, row["qty"] + 1):
                     st.text_input(
                         f"Scan ID for {row['code']} — Job {row['job']} / Lot {row['lot']} #{i}",
-                        key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}",
+                        key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}_row{idx}",
                     )
-
+                    
         if st.button("🔍 Preview Scan Validity"):
             if not location.strip():
                 st.error("Location required first.")
@@ -389,6 +389,7 @@ def run():
         try:
             if scans_needed:
                 finalize_scan_items(
+                    adjustments,
                     scans_needed,
                     scan_inputs,
                     from_loc=location if tx_input == "ADD" else "",
