@@ -579,7 +579,7 @@ def run():
             with st.form(form_key):
                 editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
                 edited_df = st.data_editor(
-                    df[["item_code", "description", "qty_req", "kitted_qty", "note"]],
+                    df.reindex(columns=["item_code", "description", "qty_req", "kitted_qty", "note"]),
                     key=editor_key,
                     num_rows="dynamic",
                     use_container_width=True,
