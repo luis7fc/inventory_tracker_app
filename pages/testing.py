@@ -545,6 +545,10 @@ def run():
                         tuple(k.split("|")): pd.DataFrame(v)
                         for k, v in saved["pulltag_editor_df"].items()
                     }
+                    required_cols = ["item_code", "description", "qty_req", "kitted_qty", "note", "scan_required", "transaction_type", "warehouse"]
+                    for k, df in st.session_state.pulltag_editor_df.items():
+                        st.session_state.pulltag_editor_df[k] = df.reindex(columns=required_cols)
+                                    
                     st.session_state.scan_buffer = saved["scan_buffer"]
                     st.session_state.locked = saved["locked"]
                     st.success(f"Session '{selected}' restored.")
@@ -600,7 +604,9 @@ def run():
                         preserved_cols = ["scan_required", "transaction_type", "warehouse", "qty_req"]
                         safe_original = original[["item_code"] + preserved_cols]
                         merged = edited_df.merge(safe_original, on="item_code", how="left")
-                        st.session_state.pulltag_editor_df[(job, lot)] = merged          
+                        required_cols = ["item_code", "description", "qty_req", "kitted_qty", "note", "scan_required", "transaction_type", "warehouse"]
+                        st.session_state.pulltag_editor_df[(job, lot)] = merged.reindex(columns=required_cols)
+                         
 
                     compute_scan_requirements()
                     st.success(f"Changes for `{job}-{lot}` saved.")
