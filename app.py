@@ -60,18 +60,34 @@ def add_background(png_file: str) -> None:
         box-sizing: border-box;
     }}
 
-    /* Sidebar controls */
     button[aria-label="Collapse sidebar"],
     button[aria-label="Expand sidebar"],
     button[data-testid="collapsedControl"] {{
         position: fixed !important;
-        top: 0.75rem; left: 0.75rem;
-        width: 40px !important; height: 40px !important;
+        top: 0.75rem;
+        left: 0.75rem;
+        width: 40px !important;
+        height: 40px !important;
         background: rgba(10,14,30,0.85) !important;
         border: 2px solid #00D67A !important;
         border-radius: 50% !important;
         z-index: 1003 !important;
+        font-family: 'Material Icons', sans-serif;
+        font-size: 22px;
+        color: #00D67A !important;
     }}
+    
+    button[aria-label="Collapse sidebar"]::after,
+    button[aria-label="Expand sidebar"]::after {{
+        content: "⮜"; /* fallback arrow, optional to override Material Icon */
+        display: block;
+        text-align: center;
+        font-weight: bold;
+        line-height: 40px;
+        font-size: 24px;
+        color: #00D67A;
+    }}
+
     button svg {{
         stroke: #00D67A !important;
         stroke-width: 3;
