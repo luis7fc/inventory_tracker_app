@@ -25,11 +25,23 @@ class ExportedPulltagError(Exception):
 class DuplicateScanError(Exception):
     """Same scan‑ID used twice."""
 
+STRICT_SCAN_MODE = st.secrets.get("STRICT_SCAN_MODE", False)
+
 # ─── Helpers 
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
     cur.execute("SELECT location, item_code FROM current_scan_location WHERE scan_id = %s", (scan_id,))
     row = cur.fetchone()
+
     if trans_type == "Job Issue":
+        if not STRICT_SCAN_MODE:
+            # Partial relaxed: still enforce item match if scan exists
+            if row:
+                _, item_code = row
+                if expected_item_code and item_code != expected_item_code:
+                    raise Exception(f"Scan {scan_id} is registered to item {item_code}, not {expected_item_code}.")
+            return  # skip location check, but keep item check
+    
+        # Strict mode: require full match
         if not row:
             raise Exception(f"Scan {scan_id} is not registered to any location.")
         location, item_code = row
@@ -37,12 +49,12 @@ def validate_scan_location(cur, scan_id, trans_type, expected_location=None, exp
             raise Exception(f"Scan {scan_id} is at {location}, not {expected_location}.")
         if expected_item_code and item_code != expected_item_code:
             raise Exception(f"Scan {scan_id} is registered to item {item_code}, not {expected_item_code}.")
+
     elif trans_type == "Return":
         if row:
             location, item_code = row
             raise Exception(f"Scan {scan_id} is already assigned to location {location}. Cannot return again.")
-    else:
-        raise ValueError(f"Unsupported transaction type: {trans_type}")
+
 
 def get_timezone():
     try:
@@ -110,6 +122,10 @@ def render_scan_inputs():
         scan_list = list(filter(None, re.split(r"[\s,]+", raw.strip())))
         new_scan_map[item_code] = scan_list
 
+    opened_pallets_raw = st.text_area("📦 Pallet IDs opened this session (optional)", help="Enter one per line or comma-separated", key="opened_pallets_input")
+    opened_pallets = list(filter(None, re.split(r"[\s,]+", opened_pallets_raw.strip())))
+    st.session_state["opened_pallets"] = opened_pallets
+    
     if st.button("✅ Validate Scans"):
         st.session_state.scan_buffer.clear()
         errors = []
@@ -415,6 +431,14 @@ def finalise():
                 cur.executemany("""
                     DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s
                 """, dels)
+                
+            # ─── Remove opened pallet IDs ─────────────────────────────
+            opened_pallets = st.session_state.get("opened_pallets", [])
+            if opened_pallets:
+                cur.executemany("""
+                    DELETE FROM current_scan_location
+                    WHERE scan_id = %s
+                """, [(pid,) for pid in opened_pallets])
 
             cur.connection.commit()
 
@@ -433,6 +457,7 @@ def finalise():
     st.session_state.scan_buffer.clear()
     st.session_state.pulltag_editor_df.clear()
     st.session_state.locked = False
+    st.session_state.opened_pallets = []
     st.success("✅ Finalization complete. All pulltags archived from editor.")
 
 
