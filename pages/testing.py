@@ -598,48 +598,76 @@ def run():
                 if st.button("🧹 Clear Scan Buffer"):
                     st.session_state.scan_buffer.clear()
                     st.success("Scan buffer cleared.")
-    # ─── Pull‑Tag Editors (Refactored) ─────────────────────────────────────────────────────
-    for (job, lot), df in list(st.session_state.pulltag_editor_df.items()):
-        st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
-        col1, col2 = st.columns([6, 1])
+                    
+    # ─── Pull‑Tag Editors (Refactored with Subtabs + Summary) ─────────────────────────────
+    if st.session_state.pulltag_editor_df:
+        tab_labels = [f"{job}-{lot}" for (job, lot) in st.session_state.pulltag_editor_df.keys()]
+        master_tab_label = "📋 Kitting Summary"
+        tabs = st.tabs([master_tab_label] + tab_labels)
     
-        with col1:
-            form_key = f"{EDIT_ANCHOR}_form_{job}_{lot}"
-            with st.form(form_key):
-                editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
-                edited_df = st.data_editor(
-                    df.reindex(columns=["item_code", "description", "qty_req", "kitted_qty", "note"]),
-                    key=editor_key,
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    disabled=st.session_state.locked,
-                    column_config={
-                        "item_code": st.column_config.TextColumn("Item Code", disabled=True),
-                        "description": st.column_config.TextColumn("Description", disabled=True),
-                        "qty_req": st.column_config.NumberColumn("Qty Required", disabled=True),
-                        "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
-                        "note": st.column_config.TextColumn("Notes"),
-                    }
-                )
-                submitted = st.form_submit_button("📂 Apply Changes")
-                if submitted:
-                    original = st.session_state.pulltag_editor_df.get((job, lot))
-                    st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
-                    if original is not None:
-                        preserved_cols = ["scan_required", "transaction_type", "warehouse", "qty_req"]
-                        safe_original = original[["item_code"] + preserved_cols]
-                        merged = edited_df.merge(safe_original, on="item_code", how="left")
-                        required_cols = ["item_code", "description", "qty_req", "kitted_qty", "note", "scan_required", "transaction_type", "warehouse"]
-                        st.session_state.pulltag_editor_df[(job, lot)] = merged.reindex(columns=required_cols)
-                         
-
-                    compute_scan_requirements()
-                    st.success(f"Changes for `{job}-{lot}` saved.")
-                    logger.info(f"[REPLACED DF] {job}-{lot}: {edited_df[['item_code', 'kitted_qty']].to_dict()}")
+        # --- Master Summary Tab ---
+        with tabs[0]:
+            st.markdown("### 📦 Kitting Summary Across All Lots")
+            summary_rows = []
+            for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                for _, row in df.iterrows():
+                    summary_rows.append({
+                        "Job": job,
+                        "Lot": lot,
+                        "Item Code": row["item_code"],
+                        "Description": row.get("description", ""),
+                        "Kitted Qty": row.get("kitted_qty", 0)
+                    })
     
-        with col2:
-            if st.button(f"❌ Remove `{job}-{lot}`", key=f"remove_{job}_{lot}"):
-                del st.session_state.pulltag_editor_df[(job, lot)]
+            summary_df = pd.DataFrame(summary_rows)
+            if not summary_df.empty:
+                summary_df = summary_df.groupby(["Item Code", "Description"], as_index=False)["Kitted Qty"].sum()
+                summary_df = summary_df.sort_values(by="Item Code")
+                st.dataframe(summary_df, use_container_width=True)
+            else:
+                st.info("No pulltags loaded yet.")
+    
+        # --- Individual Lot Tabs ---
+        for i, ((job, lot), df) in enumerate(st.session_state.pulltag_editor_df.items(), start=1):
+            with tabs[i]:
+                st.markdown(f"### 🛠 Editing Pull‑Tags for `{job}-{lot}`")
+                col1, col2 = st.columns([6, 1])
+    
+                with col1:
+                    form_key = f"{EDIT_ANCHOR}_form_{job}_{lot}"
+                    with st.form(form_key):
+                        editor_key = f"{EDIT_ANCHOR}_{job}_{lot}"
+                        edited_df = st.data_editor(
+                            df.reindex(columns=["item_code", "description", "qty_req", "kitted_qty", "note"]),
+                            key=editor_key,
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            disabled=st.session_state.locked,
+                            column_config={
+                                "item_code": st.column_config.TextColumn("Item Code", disabled=True),
+                                "description": st.column_config.TextColumn("Description", disabled=True),
+                                "qty_req": st.column_config.NumberColumn("Qty Required", disabled=True),
+                                "kitted_qty": st.column_config.NumberColumn("Kitted Qty"),
+                                "note": st.column_config.TextColumn("Notes"),
+                            }
+                        )
+                        submitted = st.form_submit_button("📂 Apply Changes")
+                        if submitted:
+                            original = st.session_state.pulltag_editor_df.get((job, lot))
+                            st.session_state.pulltag_editor_df[(job, lot)] = edited_df.copy()
+                            if original is not None:
+                                preserved_cols = ["scan_required", "transaction_type", "warehouse", "qty_req"]
+                                safe_original = original[["item_code"] + preserved_cols]
+                                merged = edited_df.merge(safe_original, on="item_code", how="left")
+                                required_cols = ["item_code", "description", "qty_req", "kitted_qty", "note", "scan_required", "transaction_type", "warehouse"]
+                                st.session_state.pulltag_editor_df[(job, lot)] = merged.reindex(columns=required_cols)
+    
+                            compute_scan_requirements()
+                            st.success(f"Changes for `{job}-{lot}` saved.")
+    
+                with col2:
+                    if st.button(f"❌ Remove `{job}-{lot}`", key=f"remove_{job}_{lot}"):
+                        del st.session_state.pulltag_editor_df[(job, lot)]
 
     if not st.session_state.locked:
         st.warning("🔒 Lock quantities before finalizing.")
