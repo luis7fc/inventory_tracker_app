@@ -43,7 +43,7 @@ class ExportedPulltagError(Exception):
 class DuplicateScanError(Exception):
     """Same scan‑ID used twice."""
 
-STRICT_SCAN_MODE = bool(get_secret("STRICT_SCAN_MODE") or False)
+STRICT_SCAN_MODE = (str(get_secret("STRICT_SCAN_MODE") or "").lower() == "true")
 
 # ─── Helpers 
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
