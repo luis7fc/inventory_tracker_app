@@ -613,7 +613,10 @@ def run():
             render_scan_inputs()
             if st.session_state.scan_buffer:
                 st.markdown("### 📋 Scan Buffer")
-                st.table(pd.DataFrame(st.session_state.scan_buffer, columns=["Job", "Lot", "Item", "Scan ID"]))
+                st.table(pd.DataFrame(
+                    st.session_state.scan_buffer,
+                    columns=["Job", "Lot", "Item", "Scan ID", "Transaction Type", "Warehouse"]
+                ))
                 if st.button("🧹 Clear Scan Buffer"):
                     st.session_state.scan_buffer.clear()
                     st.success("Scan buffer cleared.")
