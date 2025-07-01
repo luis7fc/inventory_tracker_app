@@ -33,4 +33,4 @@ MAX_ITEM_TYPES_IN_STAGING = 20
 
 # --- Admin Override ---
 # Stored in Streamlit secrets under [general] table
-ADMIN_OVERRIDE_SECRET_KEY = st.secrets["admin_password"]
+ADMIN_OVERRIDE_SECRET_KEY = st.secrets["general"]["admin_password"]
