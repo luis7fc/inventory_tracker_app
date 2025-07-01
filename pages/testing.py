@@ -315,29 +315,27 @@ def finalise():
 
     try:
         with get_db_cursor() as cur, cur.connection:
+            # Use (job, lot, item_code) as key
             item_scan_map = defaultdict(list)
             for j, l, ic, sid, tx_type, wh in sb:
-                item_scan_map[(j, ic)].append(sid)
+                item_scan_map[(j, l, ic)].append(sid)
 
             distributed_scans = defaultdict(list)
-            for (job, item_code), scans_for_item in item_scan_map.items():
-                total_needed = 0
-                for (lot_k, df_k) in st.session_state.pulltag_editor_df.items():
-                    if lot_k[0] == job and item_code in df_k["item_code"].values:
-                        total_needed += int(df_k[df_k["item_code"] == item_code]["kitted_qty"].iloc[0])
+
+            for (job, lot, item_code), scans_for_item in item_scan_map.items():
+                df_k = st.session_state.pulltag_editor_df.get((job, lot))
+                if df_k is None:
+                    raise Exception(f"Missing pulltag for {job}-{lot}-{item_code}")
+                try:
+                    total_needed = int(df_k[df_k["item_code"] == item_code]["kitted_qty"].iloc[0])
+                except IndexError:
+                    raise Exception(f"Item {item_code} not found in pulltag for {job}-{lot}")
+                
                 if len(set(scans_for_item)) != abs(total_needed):
-                    raise ScanMismatchError(f"{job}-{item_code}: need {abs(total_needed)} scans, got {len(set(scans_for_item))}.")
+                    raise ScanMismatchError(f"{job}-{lot}-{item_code}: need {abs(total_needed)} scans, got {len(set(scans_for_item))}.")
 
                 scan_queue = list(dict.fromkeys(scans_for_item))
-
-                for (lot_k, df_k) in st.session_state.pulltag_editor_df.items():
-                    if lot_k[0] != job:
-                        continue
-                    for idx, row in df_k[df_k["item_code"] == item_code].iterrows():
-                        qty = int(row["kitted_qty"])
-                        assigned = scan_queue[:abs(qty)]
-                        distributed_scans[(lot_k[0], lot_k[1], item_code)] = assigned
-                        scan_queue = scan_queue[abs(qty):]
+                distributed_scans[(job, lot, item_code)] = scan_queue[:abs(total_needed)]
 
             for (job, lot), df in st.session_state.pulltag_editor_df.items():
                 for _, r in df.iterrows():
@@ -450,8 +448,7 @@ def finalise():
                 cur.executemany("""
                     DELETE FROM pulltags WHERE job_number=%s AND lot_number=%s AND item_code=%s
                 """, dels)
-                
-            # ─── Remove opened pallet IDs ─────────────────────────────
+
             opened_pallets = st.session_state.get("opened_pallets", [])
             if opened_pallets:
                 cur.executemany("""
@@ -466,7 +463,6 @@ def finalise():
         st.exception(e)
         logger.exception("Finalisation failed")
         return
-    
 
     pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
         datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
@@ -480,7 +476,7 @@ def finalise():
     st.session_state.locked = False
     st.session_state.opened_pallets = []
     st.success("✅ Finalization complete. All pulltags archived from editor.")
-
+    
 
 def run():
     bootstrap_state()
