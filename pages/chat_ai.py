@@ -18,22 +18,37 @@ AI‑Powered Inventory Assistant v5.3 (Enhanced)
 * Results dataframe & optional CSV/TXT downloads.
 """
 
+# ─── Secret Loader ─────────────────────────────────────────────────────────
+def get_secret(key, subkey=None):
+    """
+    Retrieves secrets from nested (Cloud-style) or flattened (Render-style) formats.
+    Usage:
+        get_secret("supabase", "url")  → st.secrets["supabase"]["url"] or st.secrets["SUPABASE_URL"]
+        get_secret("admin_password")  → st.secrets["admin_password"]
+    """
+    try:
+        if subkey:
+            return st.secrets[key][subkey]
+        return st.secrets[key]
+    except Exception:
+        flat_key = f"{key}_{subkey}" if subkey else key
+        return st.secrets.get(flat_key)
+
 # ─── Config ────────────────────────────────────────────────────────────────
-client = OpenAI(api_key=st.secrets["openai"]["api_key"])
-MAX_CSV_LINES     = 100   # cap CSV rows passed to LLM
-MAX_GLOSSARY_LINES = 60   # cap combined glossary lines
+client = OpenAI(api_key=get_secret("openai", "api_key"))
+MAX_CSV_LINES      = 100   # cap CSV rows passed to LLM
+MAX_GLOSSARY_LINES = 60    # cap combined glossary lines
 
 # ─── Database cursor functions ─────────────────────────────────────────────
 @contextlib.contextmanager
-
 def get_readonly_cursor():
     """Yields a read-only cursor for SELECT queries, no commit needed."""
     conn = psycopg2.connect(
-        host=st.secrets["DB_HOST"],
-        dbname=st.secrets["DB_NAME"],
-        user=st.secrets["DB_READONLY_USER"],  # Assumes read-only user in secrets
-        password=st.secrets["DB_READONLY_PASSWORD"],
-        port=st.secrets.get("DB_PORT", 5432),
+        host=get_secret("DB_HOST"),
+        dbname=get_secret("DB_NAME"),
+        user=get_secret("DB_READONLY_USER"),  # Assumes read-only user in secrets
+        password=get_secret("DB_READONLY_PASSWORD"),
+        port=get_secret("DB_PORT") or 5432,
         options="-c statement_timeout=30000"  # 30-second query timeout
     )
     conn.set_session(readonly=True)  # Enforce read-only at connection level
@@ -48,11 +63,11 @@ def get_readonly_cursor():
 def get_db_cursor():
     """Yields a cursor for read-write operations (e.g., logging)."""
     conn = psycopg2.connect(
-        host=st.secrets["DB_HOST"],
-        dbname=st.secrets["DB_NAME"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"],
-        port=st.secrets.get("DB_PORT", 5432)
+        host=get_secret("DB_HOST"),
+        dbname=get_secret("DB_NAME"),
+        user=get_secret("DB_USER"),
+        password=get_secret("DB_PASSWORD"),
+        port=get_secret("DB_PORT") or 5432
     )
     try:
         cursor = conn.cursor()
@@ -102,8 +117,6 @@ Allowed tables:
 - Multiple SELECT statements are allowed, separated by semicolons.
 - No data‑modifying commands.
 - No SQL comments.
-
-Scenarios to support include audits, predictive pulltags, forecasting, TXT export, adjustment validation, pallet utilisation, anomaly heatmap, staging monitor, and free SQL.
 """
 
 FULL_CONTEXT_FROM_CHAD = """
@@ -194,15 +207,13 @@ LEFT JOIN scan_verifications sv
  AND pt.item_code = sv.item_code
 WHERE pt.lot_number = '70001'
 GROUP BY pt.job_number, pt.lot_number, pt.item_code;
-```
-
+```"+"
 ---
-
+"+"
 Always return helpful insights, not just SQL.
 Explain behavior if data is missing, mismatched, or blocked by logic.
 You are not just a query bot — you are a diagnostic expert.
 """
-
 
 # ─── Scenario catalogue ────────────────────────────────────────────────────
 SCENARIOS = [
@@ -227,11 +238,13 @@ def extract_block(text: str, tag: str) -> str | None:
     m2 = re.search(r"SELECT .*?FROM .*?(?:GROUP BY .*?|ORDER BY .*?|$)", text, re.IGNORECASE | re.DOTALL)
     return m2.group(0).strip() if m2 else None
 
+
 def df_to_limited_csv(df: pd.DataFrame, max_rows: int = MAX_CSV_LINES) -> str:
     if len(df) > max_rows:
         df = df.head(max_rows)
     buf = StringIO(); df.to_csv(buf, index=False)
     return buf.getvalue()
+
 
 def build_glossary_context() -> str | None:
     user_text = st.session_state.get("glossary_text", "")
@@ -251,7 +264,6 @@ def build_glossary_context() -> str | None:
     return "Domain glossary (interpret shorthand accordingly):\n" + glossary_text
 
 # ─── Main app ──────────────────────────────────────────────────────────────
-
 def run():
     st.title("🤖 AI Inventory Assistant")
 
