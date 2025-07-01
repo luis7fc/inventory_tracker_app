@@ -144,11 +144,11 @@ def render_scan_inputs():
     opened_pallets_raw = st.text_area("📦 Pallet IDs opened this session (optional)", help="Enter one per line or comma-separated", key="opened_pallets_input")
     opened_pallets = list(filter(None, re.split(r"[\s,]+", opened_pallets_raw.strip())))
     st.session_state["opened_pallets"] = opened_pallets
-    
+
     if st.button("✅ Validate Scans"):
         st.session_state.scan_buffer.clear()
         errors = []
-        
+
         with get_db_cursor() as cur:
             for item_code, expected_qty in item_requirements.items():
                 scans = new_scan_map[item_code]
@@ -157,29 +157,35 @@ def render_scan_inputs():
                 if len(unique_scans) != expected_qty:
                     errors.append(f"{item_code}: Expected {expected_qty}, got {len(unique_scans)} unique scans.")
                     continue
-                    
-                for sid in unique_scans:
-                    matched = False
-                    for (job, lot), df in st.session_state.pulltag_editor_df.items():
-                        if item_code in df["item_code"].values:
-                            tx_type = df[df["item_code"] == item_code]["transaction_type"].iloc[0]
-                            try:
-                                validate_scan_location(cur, sid, tx_type, expected_location=st.session_state.location, expected_item_code=item_code)
-                                st.session_state.scan_buffer.append((job, lot, item_code, sid, tx_type, st.session_state.pulltag_editor_df[(job, lot)].iloc[0]["warehouse"]))
-                            except Exception as e:
-                                errors.append(f"{item_code} ({sid}): {str(e)}")
-                            matched = True
-                            break
-                    if not matched:
-                        errors.append(f"{item_code} ({sid}): No matching pulltag found.")
+
+                scan_idx = 0
+                for (job, lot), df in st.session_state.pulltag_editor_df.items():
+                    df_item = df[df["item_code"] == item_code]
+                    if df_item.empty:
+                        continue
+
+                    tx_type = df_item["transaction_type"].iloc[0]
+                    warehouse = df_item["warehouse"].iloc[0]
+                    qty_needed = int(df_item["kitted_qty"].iloc[0])
+
+                    assigned_scans = unique_scans[scan_idx : scan_idx + qty_needed]
+                    scan_idx += qty_needed
+
+                    for sid in assigned_scans:
+                        try:
+                            validate_scan_location(cur, sid, tx_type, expected_location=st.session_state.location, expected_item_code=item_code)
+                            st.session_state.scan_buffer.append((job, lot, item_code, sid, tx_type, warehouse))
+                        except Exception as e:
+                            errors.append(f"{item_code} ({sid}): {str(e)}")
 
         if errors:
             st.session_state.scans_valid = False
-            st.session_state.scan_buffer.clear()   # discard partials
+            st.session_state.scan_buffer.clear()
             st.error("❌ Scan validation errors:\n" + "\n".join(errors))
         else:
             st.session_state.scans_valid = True
             st.success("✅ All scans validated and assigned.")
+
 
 def generate_finalize_summary_pdf(rows, user, ts):
     pdf = FPDF(orientation="L", unit="mm", format="A4")
