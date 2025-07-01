@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import pandas as pd
 import re
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fpdf import FPDF
@@ -17,6 +18,23 @@ logging.basicConfig(level=logging.INFO, filename="kitting_app.log")
 logger = logging.getLogger(__name__)
 EDIT_ANCHOR = "scan-edit"
 
+# ─── Secrets Compatibility Patch for Render ─────────────────────────
+# Handles both Streamlit Cloud nested secrets and Render flat environment vars
+
+def get_secret(key, subkey=None):
+    """
+    Retrieve a secret value:
+    - First try st.secrets (nested if subkey provided)
+    - Fallback to environment variable KEY or KEY_SUBKEY
+    """
+    try:
+        if subkey:
+            return st.secrets[key][subkey]
+        return st.secrets[key]
+    except Exception:
+        flat_key = f"{key}_{subkey}" if subkey else key
+        return os.getenv(flat_key)
+
 # ─── Exceptions 
 class ScanMismatchError(Exception):
     """Qty ≠ #scans."""
@@ -25,7 +43,7 @@ class ExportedPulltagError(Exception):
 class DuplicateScanError(Exception):
     """Same scan‑ID used twice."""
 
-STRICT_SCAN_MODE = st.secrets.get("STRICT_SCAN_MODE", False)
+STRICT_SCAN_MODE = bool(get_secret("STRICT_SCAN_MODE") or False)
 
 # ─── Helpers 
 def validate_scan_location(cur, scan_id, trans_type, expected_location=None, expected_item_code=None):
@@ -58,7 +76,8 @@ def validate_scan_location(cur, scan_id, trans_type, expected_location=None, exp
 
 def get_timezone():
     try:
-        return ZoneInfo(st.secrets.get("APP_TIMEZONE", "America/Los_Angeles"))
+        tz = get_secret("APP_TIMEZONE") or "America/Los_Angeles"
+        return ZoneInfo(tz)
     except ZoneInfoNotFoundError:
         return ZoneInfo("UTC")
 
