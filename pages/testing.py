@@ -462,9 +462,11 @@ def finalise():
             cur.connection.commit()
 
     except Exception as e:
-        st.error("❌ Finalization failed. Please check your scan counts, lot state, or try again. Error logged.")
+        st.error("❌ Finalization failed. Showing raw error for debugging:")
+        st.exception(e)
         logger.exception("Finalisation failed")
         return
+    
 
     pdf = generate_finalize_summary_pdf(summaries, st.session_state.user,
         datetime.now(get_timezone()).strftime("%Y-%m-%d %H:%M"))
