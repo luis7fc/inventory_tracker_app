@@ -12,6 +12,23 @@ from psycopg2 import OperationalError, IntegrityError
 from collections import defaultdict
 from db import get_db_cursor
 
+# ─── Secret Loader ─────────────────────────────────────────────────────────
+def get_secret(key, subkey=None):
+    """
+    Retrieves secrets from nested (Cloud-style) or flattened (Render-style) formats.
+    Usage:
+        get_secret("APP_TIMEZONE")                → st.secrets.get("APP_TIMEZONE")
+        get_secret("other_section", "subkey")  → st.secrets["other_section"]["subkey"] or st.secrets.get("other_section_subkey")
+    """
+    try:
+        if subkey:
+            return st.secrets[key][subkey]
+        return st.secrets[key]
+    except Exception:
+        flat_key = f"{key}_{subkey}" if subkey else key
+        return st.secrets.get(flat_key)
+
+
 # ─── Logging 
 logging.basicConfig(level=logging.INFO, filename="kitting_app.log")
 logger = logging.getLogger(__name__)
@@ -45,8 +62,10 @@ def validate_scan_location(cur, scan_id, trans_type, expected_location=None, exp
         raise ValueError(f"Unsupported transaction type: {trans_type}")
 
 def get_timezone():
+    """Return ZoneInfo from secret or default to America/Los_Angeles."""
     try:
-        return ZoneInfo(st.secrets.get("APP_TIMEZONE", "America/Los_Angeles"))
+        tz_string = get_secret("APP_TIMEZONE") or "America/Los_Angeles"
+        return ZoneInfo(tz_string)
     except ZoneInfoNotFoundError:
         return ZoneInfo("UTC")
 
