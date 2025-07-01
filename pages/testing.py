@@ -331,10 +331,11 @@ def finalise():
                 except IndexError:
                     raise Exception(f"Item {item_code} not found in pulltag for {job}-{lot}")
                 
-                if len(set(scans_for_item)) != abs(total_needed):
-                    raise ScanMismatchError(f"{job}-{lot}-{item_code}: need {abs(total_needed)} scans, got {len(set(scans_for_item))}.")
-
-                scan_queue = list(dict.fromkeys(scans_for_item))
+                unique_scans = list(dict.fromkeys(scans_for_item))
+                if len(unique_scans) != abs(total_needed):
+                    raise ScanMismatchError(f"{job}-{lot}-{item_code}: need {abs(total_needed)} unique scans, got {len(unique_scans)}.")
+               
+                scan_queue = unique_scans       
                 distributed_scans[(job, lot, item_code)] = scan_queue[:abs(total_needed)]
 
             for (job, lot), df in st.session_state.pulltag_editor_df.items():
