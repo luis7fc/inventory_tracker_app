@@ -6,3 +6,4 @@ qrcode[pil]
 supabase>=2.0
 fpdf>=1.7.2
 openai
+reportlab==3.6.13
