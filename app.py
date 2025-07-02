@@ -20,6 +20,7 @@ import pages.chat_ai                as chat_ai
 import pages.pulltag_upload         as pulltag_upload
 import pages.kitting                as kitting
 import pages.testing                as testing
+import pages.prewire                as prewire
 # ──────────────────────────────────────────────────────────────────────────────
 #  Global background helper
 # ──────────────────────────────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ base_pages = [
     "Pull-tag Upload",
     "Sage Export",
     "Chat AI",
+    "Pre-wire"
 ]
 
 # Admin-only pages
@@ -258,6 +260,8 @@ elif choice == "Pallet Tools":
     pallet_tools.run()
 elif choice == "Chat AI":
     chat_ai.run()
+elif choice == "Pre-wire":
+    prewire.run()
 elif choice == "Testing":
     testing.run()
 
