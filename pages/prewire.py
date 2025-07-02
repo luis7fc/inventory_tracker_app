@@ -11,15 +11,22 @@ from db import get_db_cursor
 # CONSTANTS
 # ─────────────────────────────────────────────
 ROUNDING_UNITS = {
-    "10RED": 500, "10BLK": 500, "10WHT": 500, "10GRN": 500,
-    "8RED": 500, "8WHT": 500, "8BLK": 500, "8GRN": 500,
-    "6RED": 500, "6WHT": 500, "6BLK": 500, "6GRN": 500,
-    "4BLK": 100, "4RED": 100, "4GRN": 100, "4WHT": 100,
-    "ROM143": 250, "ROM103": 250, "ROM83": 125,
-    "ROM63": 125, "ROM43": 100, "184CSHLD": 500, "CAT5S": 500,
-    "SF1HEM": 1,   "SF1DSA": 1,   "SF1BASE": 1,
-    "QFP100": 1,  "34EMT": 10,   "NAILPLT": 1
+    "10BLK": 500, "10GRN": 500, "10RED": 500, "10WHT": 500,
+    "184CSHLD": 500,
+    "34EMT": 10, "34FLEX": 100,
+    "3BLK": 100, "3GRN": 100, "3RED": 100, "3WHT": 100,
+    "4BLK": 100, "4GRN": 100, "4RED": 100, "4WHT": 100,
+    "6BLK": 500, "6GRN": 500, "6RED": 500, "6WHT": 500,
+    "8BLK": 500, "8GRN": 500, "8RED": 500, "8WHT": 500,
+    "CAT5S": 500, "DEVBOX26": 1, "EBOX1G": 1, "EIQBCTRL": 50,
+    "NAILPLT": 1, "QFP100": 1, "QFP50": 1,
+    "ROM102": 250, "ROM103": 250, "ROM143": 250,
+    "ROM43": 100, "ROM63": 125, "ROM83": 125,
+    "SF1BASE": 1, "SF1DSA": 1, "SF1HEM": 1,
+    "SF34DSA": 1, "SF34FHA": 1,
+    "SER33": 100, "SOLDCK": 1
 }
+
 
 # ─────────────────────────────────────────────
 # HELPERS – PDF, TXT GENERATION & DISTRIBUTION
