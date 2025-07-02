@@ -67,8 +67,8 @@ def generate_pdf(activities, totals):
 def generate_sage_txt(activities, item_data):
     today = datetime.today().strftime("%m-%d-%y")
     lines = [
-        f"I,Test Import,{today},{today},,""",,,,,,,,",  # Sage import header
-        ";line ID,location,item code,quantity,unit of measure,\"description\",conversion factor,equipment id,equipment cost code,job,lot,cost code,category,requisition number,issue date"
+        f'I,Test Import,{today},{today},,"",,,,,,,,',  # Sage import header
+        ';line ID,location,item code,quantity,unit of measure,"description",conversion factor,equipment id,equipment cost code,job,lot,cost code,category,requisition number,issue date'
     ]
 
     for key, mats in activities.items():
@@ -139,17 +139,24 @@ def run():
         opp_df = pd.DataFrame(cur.fetchall(), columns=[d[0] for d in cur.description])
         cur.execute("SELECT item_code, item_description, cost_code, uom FROM items_master")
         rows = cur.fetchall()
-        item_data = {r[0].upper(): {"description": r[1], "job_cost_code": r[2], "unit_of_measure": r[3]} for r in rows}
+        item_data = {
+            r[0].upper(): {
+                "description": r[1],
+                "job_cost_code": r[2],
+                "unit_of_measure": r[3]
+            }
+            for r in rows
+        }
 
     opp_df.columns = opp_df.columns.str.lower()
 
     # build activities
     activities = {}
     for _, row in df.iterrows():
-        lot  = str(row["lot #"]).strip()
-        job  = str(row["job name"]).strip().lower()
+        lot   = str(row["lot #"]).strip()
+        job   = str(row["job name"]).strip().lower()
         jobno = str(row["job number"]).strip()
-        key = f"{lot} - {job} - {jobno}"
+        key   = f"{lot} - {job} - {jobno}"
         match = opp_df[opp_df["job_name"] == job]
         if match.empty:
             continue
