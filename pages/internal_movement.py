@@ -1,5 +1,3 @@
-# pages/internal_movement.py
-
 import streamlit as st
 import math
 import random
@@ -85,13 +83,26 @@ def run():
             if from_loc == to_loc:
                 error_msgs.append(f"Line {idx+1}: from and to location must differ.")
 
+            # Validate from_location exists
+            with get_db_cursor() as cur:
+                cur.execute("SELECT 1 FROM locations WHERE location_code = %s", (from_loc,))
+                if cur.fetchone() is None:
+                    error_msgs.append(
+                        f"Line {idx+1}: source location '{from_loc}' does not exist in system. Please verify or correct it."
+                    )
+
+            # Validate to_location exists and is in correct warehouse
             with get_db_cursor() as cur:
                 cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (to_loc,))
-                actual_to_warehouse = cur.fetchone()
-                if actual_to_warehouse and actual_to_warehouse[0] != warehouse:
+                result = cur.fetchone()
+                if result is None:
                     error_msgs.append(
-                        f"Line {idx+1}: destination location '{to_loc}' is in warehouse '{actual_to_warehouse[0]}', "
-                        f"but your selected warehouse is '{warehouse}'. Use the Warehouse Transfer page for inter-warehouse moves."
+                        f"Line {idx+1}: destination location '{to_loc}' does not exist in system. Please create it via Manage Locations tab."
+                    )
+                elif result[0] != warehouse:
+                    error_msgs.append(
+                        f"Line {idx+1}: destination location '{to_loc}' belongs to warehouse '{result[0]}', "
+                        f"but selected warehouse is '{warehouse}'. Use Warehouse Transfer module instead."
                     )
 
             with get_db_cursor() as cur:
