@@ -79,19 +79,27 @@ def run():
             return
 
         # 2) Validate each line
+        # 2) Validate each line
         error_msgs = []
         for idx, line in enumerate(lines):
             if not line["item_code"] or line["quantity"] <= 0 or not line["location"]:
                 error_msgs.append(f"Line {idx+1}: missing item code, quantity, or location.")
-
-            # Multi-item rule via locations table
+        
+            # ✅ Location belongs to selected warehouse?
             with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT multi_item_allowed FROM locations WHERE location_code=%s",
+                    "SELECT warehouse, multi_item_allowed FROM locations WHERE location_code = %s",
                     (line["location"],)
                 )
                 row = cur.fetchone()
-            multi_allowed = bool(row[0]) if row else False
+            if not row:
+                error_msgs.append(f"Line {idx+1}: location '{line['location']}' does not exist in locations table.")
+                continue
+            loc_warehouse, multi_allowed = row
+            if loc_warehouse != warehouse:
+                error_msgs.append(f"Line {idx+1}: location '{line['location']}' is not part of warehouse '{warehouse}'.")
+        
+            # 🚫 Multi-item restriction logic
             if not multi_allowed:
                 with get_db_cursor() as cur:
                     cur.execute(
@@ -109,8 +117,8 @@ def run():
             scans = line.get("scans", [])
             if len(scans) != expected or any(not s.strip() for s in scans):
                 error_msgs.append(f"Line {idx+1}: scans count mismatch or blank entries.")
-
-            # Scan uniqueness against current_scan_location (skip for KIT locations): Enhanced scan reuse check
+        
+            # Scan reuse check
             for scan_id in scans:
                 clean_id = scan_id.strip()
                 with get_db_cursor() as cur:
