@@ -497,12 +497,15 @@ def run():
         if not location:
             st.error("Location required first.")
         else:
-            # 1) Gather your scan inputs
-            scan_inputs = {
-                k: v
-                for k, v in st.session_state.items()
-                if k.startswith("scan_")
-            }
+            scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith('scan_')}
+            st.session_state['scan_preview'] = show_scan_preview(
+                adjustments,
+                scan_inputs,
+                location,
+                tx_input,
+                warehouse_sel
+            )
+
             # 2) Build scans_needed just like in submission
             scans_needed = {
                 row["code"]: {(row["job"], row["lot"]): row["qty"]}
