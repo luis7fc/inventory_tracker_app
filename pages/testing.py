@@ -179,7 +179,7 @@ def insert_pulltag_line(cur, job, lot, code, qty, loc, tx_type, note, warehouse_
         WHERE item_code = %s
         RETURNING id
         """,
-        (job, lot, insert_qty, tx_type, note, warehouse, code),
+        (job, lot, insert_qty, tx_order, note, warehouse, code),
     )
     result = cur.fetchone()
     if not result:
@@ -261,7 +261,6 @@ def finalize_scan_items(adjustments, scans_needed, scan_inputs, *, from_loc, to_
                                 "\n".join([f"{r[0]} at {r[1]} on {r[2]}" for r in history])
                             )
 
-                    # For RETURNB, validate strictly
                     if input_tx is TxType.RETURNB:
                         _, err = validate_scan(sid, code, from_loc, to_loc, input_tx, cur)
                         if err:
@@ -281,7 +280,6 @@ def finalize_scan_items(adjustments, scans_needed, scan_inputs, *, from_loc, to_
                 st.code(repr(scan_map), language="python")
             raise
 
-preview: list[dict] = []  # holds last preview
 
 def preview_scan_validity(adjustments, scans_needed, scan_inputs, from_loc, to_loc, input_tx):
     results: list[dict] = []
@@ -343,7 +341,6 @@ def preview_scan_validity(adjustments, scans_needed, scan_inputs, from_loc, to_l
                     "bypassable": bypassable
                 })
 
-    # Detect duplicates
     all_sids = [r["scan_id"] for r in results if r["status"] != "❌ Missing"]
     dup_counts = Counter(all_sids)
     duplicates = {sid for sid, cnt in dup_counts.items() if cnt > 1}
@@ -380,7 +377,7 @@ def run():
         st.stop()
     user = st.session_state.user
 
-    tx_input = st.selectbox("Transaction Type", ["ADD", "RETURNB"] )
+    tx_input = st.selectbox("Transaction Type", ["ADD", "RETURNB"])  
     warehouse_sel = st.selectbox("Warehouse", WAREHOUSES)
     location = st.text_input("Location")
     note = st.text_input("Note (optional)")
@@ -443,55 +440,48 @@ def run():
                     adjustments,scan_inputs,location,tx_input
                 )
 
-    if 'scan_preview' in st.session_state:
-        preview=st.session_state['scan_preview']
-    else:
-        preview=[]
+    preview = st.session_state.get('scan_preview', [])
 
     if st.button("Submit Adjustments"):
         if not location:
             st.error("Location required first.")
             st.stop()
-        # block any non-bypassable errors
-        non_bypassable=[e for e in preview if not e.get('bypassable')]
-        warnings=[e for e in preview if e.get('bypassable')]
-        if non_bypassable:
+        errors = [e for e in preview if e['status'].startswith('❌')]
+        warnings = [e for e in preview if e['status'].startswith('⚠️')]
+        if errors:
             st.error("Cannot submit due to errors:")
-            for e in non_bypassable:
+            for e in errors:
                 st.write(f"- {e['scan_id']}: {e['reason']}")
             st.stop()
-        if warnings and tx_input=='ADD':
+        if warnings and tx_input == 'ADD' and not st.session_state.get('bypass_confirmed'):
             st.warning("There are warnings:")
             for e in warnings:
                 st.write(f"- {e['scan_id']}: {e['reason']}")
-            if not st.session_state.get('bypass_confirmed'):
-                if st.button("Proceed with warnings"):
-                    st.session_state['bypass_confirmed']=True
-                    st.experimental_rerun()
-                else:
-                    st.stop()
-        # proceed
+            if st.button("Proceed with warnings"):
+                st.session_state['bypass_confirmed'] = True
+                st.experimental_rerun()
+            st.stop()
         try:
-            scans_needed={row['code']:{(row['job'],row['lot']):row['qty']} for row in adjustments if row['scan_required']}
-            scan_inputs={k:v for k,v in st.session_state.items() if k.startswith('scan_')}
+            scans_needed = {row['code']:{(row['job'],row['lot']):row['qty']} for row in adjustments if row['scan_required']}
+            scan_inputs = {k:v for k,v in st.session_state.items() if k.startswith('scan_')}
             if scans_needed:
                 finalize_scan_items(
-                    adjustments,scans_needed,scan_inputs,
-                    from_loc=location if tx_input=='ADD' else '',
-                    to_loc=location if tx_input=='RETURNB' else '',
-                    user=user,note=note,
-                    input_tx=tx_input,warehouse_sel=warehouse_sel
+                    adjustments, scans_needed, scan_inputs,
+                    from_loc=location if tx_input == 'ADD' else '',
+                    to_loc=location if tx_input == 'RETURNB' else '',
+                    user=user, note=note,
+                    input_tx=tx_input, warehouse_sel=warehouse_sel
                 )
             with get_db_cursor() as cur:
                 for row in adjustments:
                     insert_pulltag_line(
-                        cur,row['job'],row['lot'],row['code'],row['qty'],
-                        location,tx_input,note,warehouse_sel=warehouse_sel
+                        cur, row['job'], row['lot'], row['code'], row['qty'],
+                        location, tx_input, note, warehouse_sel=warehouse_sel
                     )
             st.success(random.choice(IRISH_TOASTS))
-            st.session_state['adj_rows']=[]
-            st.session_state.pop('scan_preview',None)
-            st.session_state.pop('bypass_confirmed',None)
+            st.session_state['adj_rows'] = []
+            st.session_state.pop('scan_preview', None)
+            st.session_state.pop('bypass_confirmed', None)
         except Exception as exc:
             st.error(f"Submission failed: {exc}")
             st.stop()
