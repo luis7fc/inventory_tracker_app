@@ -423,13 +423,7 @@ def show_scan_preview(adjustments, scan_inputs, location, tx_input, warehouse_se
         input_tx=tx_input,
         warehouse_sel=warehouse_sel
     )
-        adjustments,
-        {},
-        scan_inputs,
-        from_loc=location if tx_input == "ADD" else "",
-        to_loc=location if tx_input == "RETURNB" else "",
-        input_tx=tx_input
-    )
+
     st.markdown("### 🧾 Scan Validation Preview")
     for entry in preview:
         st.write(f"{entry['scan_id']} — {entry['status']} ({entry['reason']})")
