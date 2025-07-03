@@ -447,15 +447,15 @@ def run():
         st.warning("There are warnings that require confirmation to proceed:")
         for e in warnings:
             st.write(f"- {e['item_code']} (`{e['scan_id']}`): {e['reason']}")
-
-    submit_text = "Confirm and Submit" if bypass_is_needed else "Submit Adjustments"
     
-    # 👇 Fix: Reset stuck flag if the button isn't clicked
-    if not c2.button(submit_text, disabled=not adjustments or is_submitting):
+    submit_text = "Confirm and Submit" if bypass_is_needed else "Submit Adjustments"
+
+    submit_key = "submit_button_confirm" if bypass_is_needed else "submit_button"
+    
+    if not c2.button(submit_text, key=submit_key + "_check", disabled=not adjustments or is_submitting):
         st.session_state['submission_pending'] = False
     
-    # 👇 Actual submission logic
-    if c2.button(submit_text, disabled=not adjustments or is_submitting):
+    if c2.button(submit_text, key=submit_key, disabled=not adjustments or is_submitting):
         st.session_state['submission_pending'] = True
         try:
             if not location:
