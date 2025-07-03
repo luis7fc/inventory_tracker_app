@@ -492,13 +492,14 @@ def run():
                         f"Scan ID for {row['code']} — Job {row['job']} / Lot {row['lot']} #{i}",
                         key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}_row{idx}"
                     )
-        if st.button("🔍 Preview Scan Validity"):
+
+       if st.button("🔍 Preview Scan Validity"):
             if not location:
                 st.error("Location required first.")
             else:
-                scan_inputs={k:v for k,v in st.session_state.items() if k.startswith('scan_')}
-                st.session_state['scan_preview']=show_scan_preview(
-                    adjustments,scan_inputs,location,tx_input
+                scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith('scan_')}
+                st.session_state['scan_preview'] = show_scan_preview()
+                    adjustments, scan_inputs, location, tx_input, warehouse_sel
                 )
 
     preview = st.session_state.get('scan_preview', [])
