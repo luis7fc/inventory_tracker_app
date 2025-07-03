@@ -498,21 +498,11 @@ def run():
             st.error("Location required first.")
         else:
             scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith('scan_')}
-            st.session_state['scan_preview'] = show_scan_preview(
-                adjustments,
-                scan_inputs,
-                location,
-                tx_input,
-                warehouse_sel
-            )
-
-            # 2) Build scans_needed just like in submission
             scans_needed = {
                 row["code"]: {(row["job"], row["lot"]): row["qty"]}
                 for row in adjustments
                 if row["scan_required"]
             }
-            # 3) Call preview with all required args
             st.session_state["scan_preview"] = show_scan_preview(
                 adjustments,
                 scans_needed,
@@ -522,7 +512,6 @@ def run():
                 tx_input,
                 warehouse_sel,
             )
-
 
     preview = st.session_state.get('scan_preview', [])
 
