@@ -215,6 +215,32 @@ def finalize_scan_items(adjustments, scans_needed, scan_inputs, *, from_loc, to_
     completed = 0
 
     with get_db_cursor() as cur:
+        # Validate location exists and matches warehouse
+        loc_val = from_loc or to_loc
+        cur.execute("SELECT warehouse FROM locations WHERE location_code = %s", (loc_val,))
+        loc_row = cur.fetchone()
+        if not loc_row:
+            # All scans invalid if location is unknown
+            return [{
+                "scan_id": "",
+                "item_code": "",
+                "job": "",
+                "lot": "",
+                "status": "❌ Invalid",
+                "reason": f"Location '{loc_val}' not found.",
+                "bypassable": False
+            }]
+        if loc_row[0] != warehouse_sel:
+            return [{
+                "scan_id": "",
+                "item_code": "",
+                "job": "",
+                "lot": "",
+                "status": "❌ Invalid",
+                "reason": f"Location '{loc_val}' is tied to warehouse '{loc_row[0]}', not '{warehouse_sel}'.",
+                "bypassable": False
+            }]
+        # proceed with individual scan validity checks
         try:
             location_configs: dict = {}
 
@@ -281,7 +307,7 @@ def finalize_scan_items(adjustments, scans_needed, scan_inputs, *, from_loc, to_
             raise
 
 
-def preview_scan_validity(adjustments, scans_needed, scan_inputs, from_loc, to_loc, input_tx):
+def preview_scan_validity(adjustments, scans_needed, scan_inputs, from_loc, to_loc, input_tx, warehouse_sel):
     results: list[dict] = []
     with get_db_cursor() as cur:
         for row_idx, row in enumerate(adjustments):
@@ -387,8 +413,16 @@ def preview_scan_validity(adjustments, scans_needed, scan_inputs, from_loc, to_l
     return results
 
 
-def show_scan_preview(adjustments, scan_inputs, location, tx_input):
+def show_scan_preview(adjustments, scan_inputs, location, tx_input, warehouse_sel):
     preview = preview_scan_validity(
+        adjustments,
+        scans_needed,
+        scan_inputs,
+        from_loc=location if tx_input == "ADD" else "",
+        to_loc=location if tx_input == "RETURNB" else "",
+        input_tx=tx_input,
+        warehouse_sel=warehouse_sel
+    )
         adjustments,
         {},
         scan_inputs,
