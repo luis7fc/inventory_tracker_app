@@ -493,14 +493,33 @@ def run():
                         key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}_row{idx}"
                     )
 
-       if st.button("🔍 Preview Scan Validity"):
-            if not location:
-                st.error("Location required first.")
-            else:
-                scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith('scan_')}
-                st.session_state['scan_preview'] = show_scan_preview()
-                    adjustments, scan_inputs, location, tx_input, warehouse_sel
-                )
+    if st.button("🔍 Preview Scan Validity"):
+        if not location:
+            st.error("Location required first.")
+        else:
+            # 1) Gather your scan inputs
+            scan_inputs = {
+                k: v
+                for k, v in st.session_state.items()
+                if k.startswith("scan_")
+            }
+            # 2) Build scans_needed just like in submission
+            scans_needed = {
+                row["code"]: {(row["job"], row["lot"]): row["qty"]}
+                for row in adjustments
+                if row["scan_required"]
+            }
+            # 3) Call preview with all required args
+            st.session_state["scan_preview"] = show_scan_preview(
+                adjustments,
+                scans_needed,
+                scan_inputs,
+                location if tx_input == TxType.ADD.value else "",
+                location if tx_input == TxType.RETURNB.value else "",
+                tx_input,
+                warehouse_sel,
+            )
+
 
     preview = st.session_state.get('scan_preview', [])
 
