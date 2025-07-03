@@ -168,7 +168,16 @@ def run():
         if match.empty:
             continue
         mats = match.iloc[0].drop(["id", "job_name", "account"]).to_dict()
-        activities[key] = {k.upper(): int(v) for k, v in mats.items() if int(v) > 0}
+        cleaned = {}
+        for k, v in mats.items():
+            try:
+                val = int(v)
+                if val > 0:
+                    cleaned[k.upper()] = val
+            except (ValueError, TypeError):
+                continue
+        activities[key] = cleaned
+
 
     if not activities:
         st.warning("No matching opportunities found.")
