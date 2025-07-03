@@ -450,20 +450,27 @@ def run():
 
     submit_text = "Confirm and Submit" if bypass_is_needed else "Submit Adjustments"
     
-    # FIX: Re-introduced debouncing by disabling the button during submission.
+    # 👇 Fix: Reset stuck flag if the button isn't clicked
+    if not c2.button(submit_text, disabled=not adjustments or is_submitting):
+        st.session_state['submission_pending'] = False
+    
+    # 👇 Actual submission logic
     if c2.button(submit_text, disabled=not adjustments or is_submitting):
         st.session_state['submission_pending'] = True
         try:
             if not location:
                 st.error("Location is required for submission.")
+                st.session_state['submission_pending'] = False
                 st.stop()
+    
             if errors:
                 st.error("Cannot submit due to outstanding errors. Please check the preview.")
+                st.session_state['submission_pending'] = False
                 st.stop()
-            
+    
             with st.spinner("Submitting transaction..."):
                 scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith('scan_')}
-                
+    
                 if any(r.get('scan_required') for r in adjustments):
                     finalize_scan_items(
                         adjustments, scan_inputs,
@@ -472,7 +479,7 @@ def run():
                         user=user, note=note,
                         input_tx_str=tx_input, warehouse_sel=warehouse_sel
                     )
-                
+    
                 with get_db_cursor() as cur:
                     for row in adjustments:
                         if not row.get('scan_required'):
@@ -480,21 +487,18 @@ def run():
                                 cur, row['job'], row['lot'], row['code'], row['qty'],
                                 location, tx_input, note, warehouse_sel=warehouse_sel
                             )
-
+    
             st.success(random.choice(IRISH_TOASTS))
-            
             st.session_state.adj_rows = []
             st.session_state.pop('scan_preview', None)
-            for key in [k for k in st.session_state if k.startswith('scan_')]:
+            for key in [k for k in st.session_state if key.startswith('scan_')]:
                 del st.session_state[key]
-            
-            # Reset the flag before the final rerun
             st.session_state['submission_pending'] = False
             st.rerun()
-
+    
         except Exception as exc:
+            st.session_state['submission_pending'] = False
             st.error(f"Submission failed: {exc}")
             st.stop()
         finally:
-            # This ensures the flag is always reset, even if an error occurs.
             st.session_state['submission_pending'] = False
