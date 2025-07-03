@@ -498,22 +498,15 @@ def run():
             st.error("Location required first.")
         else:
             scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith('scan_')}
-            scans_needed = {
-                row["code"]: {(row["job"], row["lot"]): row["qty"]}
-                for row in adjustments
-                if row["scan_required"]
-            }
-            st.session_state["scan_preview"] = show_scan_preview(
-                adjustments,
-                scans_needed,
-                scan_inputs,
-                location if tx_input == TxType.ADD.value else "",
-                location if tx_input == TxType.RETURNB.value else "",
-                tx_input,
-                warehouse_sel,
+            scans_needed = {row['code']: {(row['job'], row['lot']): row['qty']} for row in adjustments if row['scan_required']}
+            st.session_state['scan_preview'] = show_scan_preview(
+                adjustments, scans_needed, scan_inputs,
+                location if tx_input == TxType.ADD.value else '',
+                location if tx_input == TxType.RETURNB.value else '',
+                tx_input, warehouse_sel
             )
 
-    preview = st.session_state.get('scan_preview', [])
+    preview = st.session_state.get("scan_preview", [])
 
     if st.button("Submit Adjustments"):
         if not location:
