@@ -42,8 +42,8 @@ def build_pulltag_query(
         "(%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))",
         "(%(statuses)s IS NULL OR status = ANY(%(statuses)s))",
         "(%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))",
-        "(%(start_date)s IS NULL OR last_updated::date >= %(start_date)s)",
-        "(%(end_date)s IS NULL OR last_updated::date <= %(end_date)s)",
+        "%(start_date)s IS NULL OR last_updated >= %(start_date)s)",
+        "%(end_date)s IS NULL OR last_updated < %(end_date)s)",
         "quantity != 0"
     ]
 
@@ -227,12 +227,16 @@ def run() -> None:
         st.markdown("---")
     
         # ── 2) Filters ───────────────────────────────────────────────────────
-        default_tx = ["Job Issue", "ADD", "RETURNB", "Return"]
+        default_tx = ["Job Issue", "ADD", "RETURNB", "Return", "TRANSFER"]
         tx_types = st.multiselect("Transaction Types", default_tx, default=default_tx)
         warehouse_filter = st.text_input("Warehouse filter (comma-separated)")
         start_date = st.date_input("Start Date", value=None)
         end_date = st.date_input("End Date", value=None)
-    
+        if end_date:
+            end_date = pd.to_datetime(end_date) + pd.Timedelta(days=1)
+        if start_date:
+            start_date = pd.to_datetime(start_date)
+
     
         all_statuses = get_distinct_statuses()
         statuses = st.multiselect("Status filter", all_statuses, default=all_statuses)
