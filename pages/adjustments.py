@@ -261,10 +261,12 @@ def commit_scan_items(scan_map, input_tx: TxType, warehouse_sel: str, user: str,
             """, (job, lot, code, input_tx.value))
 
             # ➕ Insert new pulltag row if missing
+            # ➕ Insert new pulltag row if missing
             cur.execute("""
                 SELECT 1 FROM pulltags
                 WHERE job_number = %s AND lot_number = %s AND item_code = %s AND transaction_type = %s
             """, (job, lot, code, input_tx.value))
+            
             if not cur.fetchone():
                 cur.execute("""
                     INSERT INTO pulltags (
@@ -278,7 +280,8 @@ def commit_scan_items(scan_map, input_tx: TxType, warehouse_sel: str, user: str,
                     FROM items_master im
                     WHERE im.item_code = %s
                 """, (
-                    job, lot, code, abs(qty_delta),  # always store positive qty
+                    job, lot, code,
+                    qty_delta if input_tx == TxType.RETURNB else abs(qty_delta),
                     input_tx.value, note, warehouse_sel,
                     code
                 ))
@@ -372,10 +375,12 @@ def requests():
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s)
                     """, (
-                        row["job"], row["lot"], row["code"], row["qty"],
+                        row["job"], row["lot"], row["code"],
+                        -row["qty"] if tx_type == "RETURNB" else row["qty"],
                         row["description"], row["cost_code"], row["uom"],
                         tx_type, row["note"], warehouse
                     ))
+
             st.success("✅ Requests submitted.")
             st.session_state.request_rows = []
 
@@ -463,7 +468,7 @@ def adjustments_return():
     default_location = st.text_input(
         "📍 Default Location (applies to empty rows)",
         value=st.session_state["global_default_location"],
-        key=f"default_location_{tx_type}"
+        key=f"default_location_RETURNB"
     )
 
 
@@ -574,7 +579,7 @@ def adjustments_add():
     default_location = st.text_input(
         "📍 Default Location (applies to empty rows)",
         value=st.session_state["global_default_location"],
-        key=f"default_location_{tx_type}"
+        key=f"default_location_ADD"
     )
 
     if "adj_rows" not in st.session_state:
@@ -683,7 +688,7 @@ def adjustments_transfer():
     default_location = st.text_input(
         "📍 Default Location (applies to empty rows)",
         value=st.session_state["global_default_location"],
-        key=f"default_location_{tx_type}"
+        key=f"default_location_TRANSFER"
     )
 
 
