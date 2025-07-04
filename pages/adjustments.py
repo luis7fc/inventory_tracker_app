@@ -12,7 +12,7 @@ import pandas as pd
 from contextlib import contextmanager
 from collections import defaultdict, Counter
 from enum import Enum
-
+from config import WAREHOUSES
 # ───────────────────────────────────────────────────────────────
 #  0.  ENUMS
 # ───────────────────────────────────────────────────────────────
@@ -353,7 +353,7 @@ def requests():
     st.title("📝 Request Pulltags")
 
     tx_type = st.selectbox("Transaction Type", [t.value for t in TxType])
-    warehouse = st.selectbox("Warehouse", st.secrets["WAREHOUSES"])
+    warehouse = st.selectbox("Warehouse", WAREHOUSES)
     note = st.text_input("Note (optional)", placeholder="e.g. urgent, staging restock")
 
     if "request_rows" not in st.session_state:
@@ -450,7 +450,7 @@ def requests():
 # ───────────────────────────────────────────────────────────────
 def kitting_common(title, tx_type: TxType, use_pallet_qty: bool):
     st.title(title)
-    warehouse, user = st.selectbox("Warehouse", st.secrets["WAREHOUSES"]), st.session_state.get("user", "unknown")
+    warehouse, user = st.selectbox("Warehouse", WAREHOUSES), st.session_state.get("user", "unknown")
     note = st.text_input("Note (optional)")
     # load requests
     if st.button("📥 Load Pending Requests"):
@@ -511,7 +511,7 @@ def adjustments_transfer():kitting_common("📦 Transfer",             TxType.TR
 #  9.  Dashboard (pending & fulfilled)
 # ───────────────────────────────────────────────────────────────
 def show_pending_pulltags():
-    wh = st.selectbox("Warehouse", st.secrets["WAREHOUSES"], key="dash_p_wh")
+    wh = st.selectbox("Warehouse", WAREHOUSES, key="dash_p_wh")
     with get_db_cursor() as cur:
         cur.execute("""
           SELECT job_number,lot_number,item_code,quantity,transaction_type,note,last_updated
@@ -521,7 +521,7 @@ def show_pending_pulltags():
     st.dataframe(df); st.download_button("⬇ CSV", df.to_csv(index=False).encode(), file_name="pending.csv")
 
 def show_fulfilled_pulltags():
-    wh = st.selectbox("Warehouse", st.secrets["WAREHOUSES"], key="dash_f_wh")
+    wh = st.selectbox("Warehouse", WAREHOUSES, key="dash_f_wh")
     col1,col2=st.columns(2)
     start,end = col1.date_input("Start", pd.to_datetime("today")-pd.Timedelta(30)), col2.date_input("End", pd.to_datetime("today"))
     job = st.text_input("Job (opt)"); lot = st.text_input("Lot (opt)")
