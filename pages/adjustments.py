@@ -476,7 +476,7 @@ def adjustments_return():
         st.session_state["adj_rows"] = []
 
     if st.button("📥 Load Pending Requests"):
-        pulled = load_pending_pulltags(tx_type="RETURNB", warehouse=warehouse)
+        pulled = load_pending_pulltags(tx_type=TxType.RETURNB.value, warehouse=warehouse)
         if pulled:
             st.session_state["adj_rows"].extend(pulled)
             st.success(f"✅ Added {len(pulled)} request row(s) to the batch.")
@@ -515,9 +515,9 @@ def adjustments_return():
     if adjustments and st.button("✅ Submit Return", key="return_submit"):
         try:
             scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
-            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="RETURNB")
-            validate_scan_items(scan_map, input_tx="RETURNB", warehouse_sel=warehouse)
-            commit_scan_items(scan_map, input_tx="RETURNB", warehouse_sel=warehouse, user=user, note=note)
+            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx=TxType.RETURNB)
+            validate_scan_items(scan_map, input_tx=TxType.RETURNB, warehouse_sel=warehouse)
+            commit_scan_items(scan_map, input_tx=TxType.RETURNB, warehouse_sel=warehouse, user=user, note=note)
             st.success("✅ Return committed.")
             st.session_state["adj_rows"] = []
             for k in list(st.session_state.keys()):
@@ -563,8 +563,8 @@ def adjustments_return():
         scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
         if st.button("🔍 Preview Scan Validity"):
             try:
-                scan_map = collect_scan_map(st.session_state["adj_rows"], scan_inputs, input_tx="RETURNB")
-                validate_scan_items(scan_map, input_tx="RETURNB", warehouse_sel=warehouse)
+                scan_map = collect_scan_map(st.session_state["adj_rows"], scan_inputs, input_tx=TxType.RETURNB)
+                validate_scan_items(scan_map, input_tx=TxType.RETURNB, warehouse_sel=warehouse)
                 st.success("✅ No blocking errors detected.")
             except Exception as e:
                 st.error(f"❌ Validation failed: {e}")
@@ -594,7 +594,7 @@ def adjustments_add():
         st.session_state["adj_rows"] = []
 
     if st.button("📥 Load Pending Requests"):
-        pulled = load_pending_pulltags(tx_type="ADD", warehouse=warehouse)
+        pulled = load_pending_pulltags(tx_type=TxType.ADD.value, warehouse=warehouse)
         if pulled:
             st.session_state["adj_rows"].extend(pulled)
             st.success(f"✅ Added {len(pulled)} request row(s) to the batch.")
@@ -633,9 +633,9 @@ def adjustments_add():
     if adjustments and st.button("✅ Submit Add-On", key="addon_submit"):
         try:
             scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
-            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="ADD")
-            validate_scan_items(scan_map, input_tx="ADD", warehouse_sel=warehouse)
-            commit_scan_items(scan_map, input_tx="ADD", warehouse_sel=warehouse, user=user, note=note)
+            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx=TxType.ADD)
+            validate_scan_items(scan_map, input_tx=TxType.ADD, warehouse_sel=warehouse)
+            commit_scan_items(scan_map, input_tx=TxType.ADD, warehouse_sel=warehouse, user=user, note=note)
             st.success("✅ Add-On committed.")
             st.session_state["adj_rows"] = []
             for k in list(st.session_state.keys()):
@@ -680,8 +680,8 @@ def adjustments_add():
         scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
         if st.button("🔍 Preview Scan Validity"):
             try:
-                scan_map = collect_scan_map(st.session_state["adj_rows"], scan_inputs, input_tx="ADD")
-                validate_scan_items(scan_map, input_tx="ADD", warehouse_sel=warehouse)
+                scan_map = collect_scan_map(st.session_state["adj_rows"], scan_inputs, input_tx=TxType.ADD)
+                validate_scan_items(scan_map, input_tx=TxType.ADD, warehouse_sel=warehouse)
                 st.success("✅ No blocking errors detected.")
             except Exception as e:
                 st.error(f"❌ Validation failed: {e}")
@@ -714,7 +714,7 @@ def adjustments_transfer():
 
     # 🚚 Load pending pulltags
     if st.button("📥 Load Pending Requests"):
-        pulled = load_pending_pulltags(tx_type="TRANSFER", warehouse=warehouse)
+        pulled = load_pending_pulltags(tx_type=TxType.TRANSFER.value, warehouse=warehouse)
         if pulled:
             st.session_state["adj_rows"].extend(pulled)
             st.success(f"✅ Added {len(pulled)} request row(s) to the batch.")
@@ -755,9 +755,9 @@ def adjustments_transfer():
     if adjustments and st.button("✅ Submit Transfer", key="transfer_submit"):
         try:
             scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
-            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="TRANSFER")
-            validate_scan_items(scan_map, input_tx="TRANSFER", warehouse_sel=warehouse)
-            commit_scan_items(scan_map, input_tx="TRANSFER", warehouse_sel=warehouse, user=user, note=note)
+            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx=TxType.TRANSFER)
+            validate_scan_items(scan_map, input_tx=TxType.TRANSFER, warehouse_sel=warehouse)
+            commit_scan_items(scan_map, input_tx=TxType.TRANSFER, warehouse_sel=warehouse, user=user, note=note)
 
             st.success("✅ Transfer committed successfully.")
             st.session_state["adj_rows"] = []
@@ -808,8 +808,8 @@ def adjustments_transfer():
         scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
         if st.button("🔍 Preview Scan Validity"):
             try:
-                scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="TRANSFER")
-                validate_scan_items(scan_map, input_tx="TRANSFER", warehouse_sel=warehouse)
+                scan_map = collect_scan_map(adjustments, scan_inputs, input_tx=TxType.TRANSFER)
+                validate_scan_items(scan_map, input_tx=TxType.TRANSFER, warehouse_sel=warehouse)
                 st.success("✅ No blocking errors detected.")
             except Exception as e:
                 st.error(f"❌ Validation failed: {e}")
