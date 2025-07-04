@@ -37,13 +37,13 @@ def build_pulltag_query(
     warehouses: Optional[List[str]] = None,
 ) -> str:
     """Dynamically builds a filtered SQL query for the pulltags table."""
-
+    #here
     filters = [
         "(%(tx_types)s IS NULL OR transaction_type = ANY(%(tx_types)s))",
         "(%(statuses)s IS NULL OR status = ANY(%(statuses)s))",
         "(%(warehouses)s IS NULL OR warehouse = ANY(%(warehouses)s))",
-        "%(start_date)s IS NULL OR last_updated >= %(start_date)s)",
-        "%(end_date)s IS NULL OR last_updated < %(end_date)s)",
+        "(%(start_date)s IS NULL OR last_updated >= %(start_date)s)",
+        "(%(end_date)s IS NULL OR last_updated < %(end_date)s)",
         "quantity != 0"
     ]
 
