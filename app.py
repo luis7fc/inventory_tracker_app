@@ -128,3 +128,13 @@ elif choice == "Pre-wire":
     prewire.run()
 elif choice == "Testing":
     testing.run()
+# ──────────────────────────────────────────────────────────────────────────────
+# 🧹 Optional: Safe Session Reset (preserves login)
+# ──────────────────────────────────────────────────────────────────────────────
+with st.sidebar.expander("🧹 Advanced Options"):
+    if st.button("Reset Session State", use_container_width=True):
+        keep_keys = {"user", "role"}
+        preserved = {k: v for k, v in st.session_state.items() if k in keep_keys}
+        st.session_state.clear()
+        st.session_state.update(preserved)
+        st.rerun()
