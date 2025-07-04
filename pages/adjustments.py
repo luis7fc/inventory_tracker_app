@@ -490,17 +490,25 @@ def adjustments_return():
         lot = c2.text_input("Lot Number")
         code = c3.text_input("Item Code")
         qty = st.number_input("Quantity", min_value=1, value=1)
+    
         submitted = st.form_submit_button("➕ Add Manual Row")
         if submitted:
+            # Fetch scan_required from items_master
+            with get_db_cursor() as cur:
+                cur.execute("SELECT scan_required FROM items_master WHERE item_code = %s", (code.strip(),))
+                result = cur.fetchone()
+                scan_required = bool(result[0]) if result else True  # fallback to True if missing
+    
             st.session_state["adj_rows"].append({
                 "job": job.strip(),
                 "lot": lot.strip(),
                 "code": code.strip(),
                 "qty": qty,
                 "location": "",
-                "scan_required": True
+                "scan_required": scan_required
             })
             st.rerun()
+
 
     adjustments = st.session_state.get("adj_rows", [])
 
@@ -600,17 +608,25 @@ def adjustments_add():
         lot = c2.text_input("Lot Number")
         code = c3.text_input("Item Code")
         qty = st.number_input("Quantity", min_value=1, value=1)
+    
         submitted = st.form_submit_button("➕ Add Manual Row")
         if submitted:
+            # Fetch scan_required from items_master
+            with get_db_cursor() as cur:
+                cur.execute("SELECT scan_required FROM items_master WHERE item_code = %s", (code.strip(),))
+                result = cur.fetchone()
+                scan_required = bool(result[0]) if result else True  # fallback to True if not found
+    
             st.session_state["adj_rows"].append({
                 "job": job.strip(),
                 "lot": lot.strip(),
                 "code": code.strip(),
                 "qty": qty,
                 "location": "",
-                "scan_required": True  # Always assume scan required unless you want to fetch from items_master
+                "scan_required": scan_required
             })
             st.rerun()
+
 
     adjustments = st.session_state.get("adj_rows", [])
 
@@ -712,18 +728,26 @@ def adjustments_transfer():
         lot = c2.text_input("Lot Number")
         code = c3.text_input("Item Code")
         qty = st.number_input("Quantity", min_value=1, value=1)
+    
         submitted = st.form_submit_button("➕ Add Manual Row")
         if submitted:
+            # Pull scan_required from items_master
+            with get_db_cursor() as cur:
+                cur.execute("SELECT scan_required FROM items_master WHERE item_code = %s", (code.strip(),))
+                result = cur.fetchone()
+                scan_required = bool(result[0]) if result else True
+    
             st.session_state["adj_rows"].append({
                 "job": job.strip(),
                 "lot": lot.strip(),
                 "code": code.strip(),
                 "qty": qty,
                 "location": "",
-                "scan_required": True,
+                "scan_required": scan_required,
                 "pallet_qty": 1
             })
             st.rerun()
+
 
     adjustments = st.session_state.get("adj_rows", [])
 
