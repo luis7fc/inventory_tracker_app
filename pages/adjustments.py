@@ -424,7 +424,7 @@ def requests():
                         "uom": meta[2],
                         "scan_required": bool(meta[3])
                     })
-                    st.experimental_rerun()
+                    st.rerun()
 
     # 📋 Show rows
     if st.session_state.request_rows:
@@ -438,7 +438,7 @@ def requests():
             cols[4].write(row["note"])
             if cols[5].button("❌", key=f"del_row_{idx}"):
                 st.session_state.request_rows.pop(idx)
-                st.experimental_rerun()
+                st.rerun()
 
         # 📄 Download options
         df = pd.DataFrame(st.session_state.request_rows)
@@ -446,97 +446,425 @@ def requests():
         st.download_button("⬇ Export CSV", data=csv, file_name="pulltag_requests.csv", use_container_width=True)
 # ───────────────────────────────────────────────────────────────
 #  8.  Kitting Tabs (Add‑On / Return / Transfer)
-#      – helper to render common parts
+#
 # ───────────────────────────────────────────────────────────────
-def kitting_common(title, tx_type: TxType, use_pallet_qty: bool):
-    st.title(title)
-    warehouse, user = st.selectbox("Warehouse", WAREHOUSES), st.session_state.get("user", "unknown")
-    note = st.text_input("Note (optional)")
-    # load requests
+
+#v2
+def adjustments_return():
+    st.title("🔁 Return (Material Back In)")
+
+    user = st.session_state.get("user", "unknown")
+    warehouse = st.selectbox("Warehouse", WAREHOUSES, key="return_wh")
+    note = st.text_input("Note (optional)", placeholder="e.g. excess material return")
+    # Set global default location
+    if "global_default_location" not in st.session_state:
+        st.session_state["global_default_location"] = ""
+
+    default_location = st.text_input(
+        "📍 Default Location (applies to empty rows)",
+        value=st.session_state["global_default_location"],
+        key=f"default_location_{tx_type}"
+    )
+
+
+    if "adj_rows" not in st.session_state:
+        st.session_state["adj_rows"] = []
+
     if st.button("📥 Load Pending Requests"):
-        pulled = load_pending_pulltags(tx_type.value, warehouse)
-        st.session_state["adj_rows"] = pulled or []
-        st.success(f"Loaded {len(pulled)} request rows." if pulled else "No pending requests.")
+        pulled = load_pending_pulltags(tx_type="RETURNB", warehouse=warehouse)
+        if pulled:
+            st.session_state["adj_rows"].extend(pulled)
+            st.success(f"✅ Added {len(pulled)} request row(s) to the batch.")
+        else:
+            st.info("No pending requests found.")
+
+    # ➕ Manual Add Row
+    with st.form("add_manual_return_row"):
+        c1, c2, c3 = st.columns([2, 2, 2])
+        job = c1.text_input("Job Number")
+        lot = c2.text_input("Lot Number")
+        code = c3.text_input("Item Code")
+        qty = st.number_input("Quantity", min_value=1, value=1)
+        submitted = st.form_submit_button("➕ Add Manual Row")
+        if submitted:
+            st.session_state["adj_rows"].append({
+                "job": job.strip(),
+                "lot": lot.strip(),
+                "code": code.strip(),
+                "qty": qty,
+                "location": "",
+                "scan_required": True
+            })
+            st.rerun()
+
     adjustments = st.session_state.get("adj_rows", [])
-    # submit top
-    if adjustments and st.button(f"✅ Submit {tx_type.value}"):
+
+    if adjustments and st.button("✅ Submit Return", key="return_submit"):
         try:
             scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
-            scan_map = collect_scan_map(adjustments, scan_inputs, tx_type)
-            validate_scan_items(scan_map, tx_type, warehouse)
-            commit_scan_items(scan_map, tx_type, warehouse, user, note)
-            st.success(f"{tx_type.value} committed.")
-            st.session_state["adj_rows"], st.session_state["scan_validation_log"] = [], []
+            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="RETURNB")
+            validate_scan_items(scan_map, input_tx="RETURNB", warehouse_sel=warehouse)
+            commit_scan_items(scan_map, input_tx="RETURNB", warehouse_sel=warehouse, user=user, note=note)
+            st.success("✅ Return committed.")
+            st.session_state["adj_rows"] = []
             for k in list(st.session_state.keys()):
-                if k.startswith("scan_"): del st.session_state[k]
+                if k.startswith("scan_"):
+                    del st.session_state[k]
+            st.session_state.pop("scan_validation_log", None)
         except Exception as e:
-            st.error(f"Commit failed: {e}")
-    # row editor
-    if adjustments:
-        st.markdown("### Edit Rows")
-        for idx, r in enumerate(adjustments):
-            cols = st.columns([2,2,2,1.5, 2] + ([1] if use_pallet_qty else []))
-            cols[0].write(r["job"]); cols[1].write(r["lot"]); cols[2].write(r["code"])
-            cols[3].write(r["qty"])
-            r["location"] = cols[4].text_input("Location", value=r["location"], key=f"loc_{idx}")
-            if use_pallet_qty:
-                r["pallet_qty"] = cols[5].number_input("PalletQty", min_value=1,
-                                                       value=r.get("pallet_qty",1), key=f"pq_{idx}")
-        # scan inputs
-        st.markdown("### Scan IDs")
-        for idx, r in enumerate(adjustments):
-            count = r["qty"] if tx_type != TxType.TRANSFER else math.ceil(r["qty"]/max(r["pallet_qty"],1))
-            if r["scan_required"]:
-                for i in range(1, count+1):
-                    st.text_input(f"{r['code']} {r['job']}/{r['lot']} Scan#{i}",
-                                  key=f"scan_{r['code']}_{r['job']}_{r['lot']}_{i}_row{idx}")
-        # exports & preview
-        df = pd.DataFrame(adjustments); csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇ Export CSV", csv, file_name=f"{tx_type.value.lower()}_batch.csv")
-        if st.button("🔍 Preview Validation"):
-            try:
-                scan_inputs = {k:v for k,v in st.session_state.items() if k.startswith("scan_")}
-                scan_map = collect_scan_map(adjustments, scan_inputs, tx_type)
-                validate_scan_items(scan_map, tx_type, warehouse)
-                st.success("No blocking errors.")
-            except Exception as e:
-                st.error(f"Validation failed: {e}")
-        show_validation_log(); export_validation_log_csv()
+            st.error(f"❌ Submission failed: {e}")
 
-def adjustments_add():     kitting_common("➕ Add‑On (Job Issue)",   TxType.ADD,      False)
-def adjustments_return():  kitting_common("🔁 Return",               TxType.RETURNB,  False)
-def adjustments_transfer():kitting_common("📦 Transfer",             TxType.TRANSFER, True)
+    if adjustments:
+        st.markdown("### ✏️ Edit Return Batch")
+        rows_to_keep = []
+        for idx, row in enumerate(adjustments):
+            cols = st.columns([2, 2, 2, 1.5, 2, 1])
+            cols[0].write(f"Job: {row['job']}")
+            cols[1].write(f"Lot: {row['lot']}")
+            cols[2].write(f"Item: {row['code']}")
+            cols[3].write(f"Qty: {row['qty']}")
+            row["location"] = cols[4].text_input(
+                "Location",
+                value=row.get("location") or default_location,
+                key=f"loc_{idx}"
+            )
+
+            if not cols[5].button("❌", key=f"remove_{idx}"):
+                rows_to_keep.append(row)
+        st.session_state["adj_rows"] = rows_to_keep
+
+        # 🔍 Scan Inputs
+        st.markdown("### 🔍 Scan Inputs")
+        for idx, row in enumerate(st.session_state["adj_rows"]):
+            if row.get("scan_required"):
+                for i in range(1, row["qty"] + 1):
+                    st.text_input(
+                        f"{row['code']} — Job {row['job']} / Lot {row['lot']} — Scan #{i}",
+                        key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}_row{idx}"
+                    )
+
+        df = pd.DataFrame(st.session_state["adj_rows"])
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇ Export Adjustment CSV", data=csv, file_name="return_batch.csv")
+
+        scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
+        if st.button("🔍 Preview Scan Validity"):
+            try:
+                scan_map = collect_scan_map(st.session_state["adj_rows"], scan_inputs, input_tx="RETURNB")
+                validate_scan_items(scan_map, input_tx="RETURNB", warehouse_sel=warehouse)
+                st.success("✅ No blocking errors detected.")
+            except Exception as e:
+                st.error(f"❌ Validation failed: {e}")
+
+        show_validation_log()
+        export_validation_log_csv()
+       
+
+#v2
+def adjustments_add():
+    st.title("➕ Add-On (Job Issue)")
+
+    user = st.session_state.get("user", "unknown")
+    warehouse = st.selectbox("Warehouse", WAREHOUSES, key="addon_wh")
+    note = st.text_input("Note (optional)", placeholder="e.g. final punch")
+    # Set global default location
+    if "global_default_location" not in st.session_state:
+        st.session_state["global_default_location"] = ""
+
+    default_location = st.text_input(
+        "📍 Default Location (applies to empty rows)",
+        value=st.session_state["global_default_location"],
+        key=f"default_location_{tx_type}"
+    )
+
+    if "adj_rows" not in st.session_state:
+        st.session_state["adj_rows"] = []
+
+    if st.button("📥 Load Pending Requests"):
+        pulled = load_pending_pulltags(tx_type="ADD", warehouse=warehouse)
+        if pulled:
+            st.session_state["adj_rows"].extend(pulled)
+            st.success(f"✅ Added {len(pulled)} request row(s) to the batch.")
+        else:
+            st.info("No pending requests found.")
+
+    # ➕ Add Manual Row
+    with st.form("add_manual_addon_row"):
+        c1, c2, c3 = st.columns([2, 2, 2])
+        job = c1.text_input("Job Number")
+        lot = c2.text_input("Lot Number")
+        code = c3.text_input("Item Code")
+        qty = st.number_input("Quantity", min_value=1, value=1)
+        submitted = st.form_submit_button("➕ Add Manual Row")
+        if submitted:
+            st.session_state["adj_rows"].append({
+                "job": job.strip(),
+                "lot": lot.strip(),
+                "code": code.strip(),
+                "qty": qty,
+                "location": "",
+                "scan_required": True  # Always assume scan required unless you want to fetch from items_master
+            })
+            st.rerun()
+
+    adjustments = st.session_state.get("adj_rows", [])
+
+    if adjustments and st.button("✅ Submit Add-On", key="addon_submit"):
+        try:
+            scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
+            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="ADD")
+            validate_scan_items(scan_map, input_tx="ADD", warehouse_sel=warehouse)
+            commit_scan_items(scan_map, input_tx="ADD", warehouse_sel=warehouse, user=user, note=note)
+            st.success("✅ Add-On committed.")
+            st.session_state["adj_rows"] = []
+            for k in list(st.session_state.keys()):
+                if k.startswith("scan_"):
+                    del st.session_state[k]
+            st.session_state.pop("scan_validation_log", None)
+        except Exception as e:
+            st.error(f"❌ Submission failed: {e}")
+
+    if adjustments:
+        st.markdown("### ✏️ Edit Add-On Batch")
+        rows_to_keep = []
+        for idx, row in enumerate(adjustments):
+            cols = st.columns([2, 2, 2, 1.5, 2, 1])
+            cols[0].write(f"Job: {row['job']}")
+            cols[1].write(f"Lot: {row['lot']}")
+            cols[2].write(f"Item: {row['code']}")
+            cols[3].write(f"Qty: {row['qty']}")
+            row["location"] = cols[4].text_input(
+                "Location",
+                value=row.get("location") or default_location,
+                key=f"loc_{idx}"
+            )
+
+            if not cols[5].button("❌", key=f"remove_{idx}"):
+                rows_to_keep.append(row)
+        st.session_state["adj_rows"] = rows_to_keep
+
+        st.markdown("### 🔍 Scan Inputs")
+        for idx, row in enumerate(st.session_state["adj_rows"]):
+            if row.get("scan_required"):
+                for i in range(1, row["qty"] + 1):
+                    st.text_input(
+                        f"{row['code']} — Job {row['job']} / Lot {row['lot']} — Scan #{i}",
+                        key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}_row{idx}"
+                    )
+
+        df = pd.DataFrame(st.session_state["adj_rows"])
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇ Export Adjustment CSV", data=csv, file_name="addon_batch.csv")
+
+        scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
+        if st.button("🔍 Preview Scan Validity"):
+            try:
+                scan_map = collect_scan_map(st.session_state["adj_rows"], scan_inputs, input_tx="ADD")
+                validate_scan_items(scan_map, input_tx="ADD", warehouse_sel=warehouse)
+                st.success("✅ No blocking errors detected.")
+            except Exception as e:
+                st.error(f"❌ Validation failed: {e}")
+
+        show_validation_log()
+        export_validation_log_csv()
+
+#v2
+
+def adjustments_transfer():
+    st.title("📦 Transfer (Shipping Out)")
+
+    user = st.session_state.get("user", "unknown")
+    warehouse = st.selectbox("Warehouse", WAREHOUSES, key="transfer_wh")
+    note = st.text_input("Note (optional)", placeholder="e.g. shipping pallets to Chowchilla")
+    # Set global default location
+    if "global_default_location" not in st.session_state:
+        st.session_state["global_default_location"] = ""
+
+    default_location = st.text_input(
+        "📍 Default Location (applies to empty rows)",
+        value=st.session_state["global_default_location"],
+        key=f"default_location_{tx_type}"
+    )
+
+
+
+    if "adj_rows" not in st.session_state:
+        st.session_state["adj_rows"] = []
+
+    # 🚚 Load pending pulltags
+    if st.button("📥 Load Pending Requests"):
+        pulled = load_pending_pulltags(tx_type="TRANSFER", warehouse=warehouse)
+        if pulled:
+            st.session_state["adj_rows"].extend(pulled)
+            st.success(f"✅ Added {len(pulled)} request row(s) to the batch.")
+        else:
+            st.info("No pending requests found.")
+
+    # ➕ Manual Add Row Form
+    with st.form("add_manual_transfer_row"):
+        c1, c2, c3 = st.columns([2, 2, 2])
+        job = c1.text_input("Job Number")
+        lot = c2.text_input("Lot Number")
+        code = c3.text_input("Item Code")
+        qty = st.number_input("Quantity", min_value=1, value=1)
+        submitted = st.form_submit_button("➕ Add Manual Row")
+        if submitted:
+            st.session_state["adj_rows"].append({
+                "job": job.strip(),
+                "lot": lot.strip(),
+                "code": code.strip(),
+                "qty": qty,
+                "location": "",
+                "scan_required": True,
+                "pallet_qty": 1
+            })
+            st.rerun()
+
+    adjustments = st.session_state.get("adj_rows", [])
+
+    # ✅ Submit
+    if adjustments and st.button("✅ Submit Transfer", key="transfer_submit"):
+        try:
+            scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
+            scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="TRANSFER")
+            validate_scan_items(scan_map, input_tx="TRANSFER", warehouse_sel=warehouse)
+            commit_scan_items(scan_map, input_tx="TRANSFER", warehouse_sel=warehouse, user=user, note=note)
+
+            st.success("✅ Transfer committed successfully.")
+            st.session_state["adj_rows"] = []
+            for k in list(st.session_state.keys()):
+                if k.startswith("scan_"):
+                    del st.session_state[k]
+            st.session_state.pop("scan_validation_log", None)
+        except Exception as e:
+            st.error(f"❌ Submission failed: {e}")
+
+    # ✏️ Row Editor
+    if adjustments:
+        st.markdown("### ✏️ Edit Transfer Batch")
+        rows_to_keep = []
+        for idx, row in enumerate(adjustments):
+            cols = st.columns([2, 2, 2, 1.5, 2, 1, 1])
+            cols[0].write(f"Job: {row['job']}")
+            cols[1].write(f"Lot: {row['lot']}")
+            cols[2].write(f"Item: {row['code']}")
+            cols[3].write(f"Qty: {row['qty']}")
+            row["location"] = cols[4].text_input(
+                "Location",
+                value=row.get("location") or default_location,
+                key=f"loc_{idx}"
+            )
+
+            row["pallet_qty"] = cols[5].number_input("Pallet Qty", min_value=1, value=row.get("pallet_qty", 1), key=f"pq_{idx}")
+            if not cols[6].button("❌", key=f"remove_{idx}"):
+                rows_to_keep.append(row)
+        st.session_state["adj_rows"] = rows_to_keep
+
+        # 🔍 Scan Inputs
+        st.markdown("### 🔍 Scan Pallet IDs")
+        for idx, row in enumerate(adjustments):
+            scan_count = -(-row["qty"] // max(row.get("pallet_qty") or 1, 1))
+            for i in range(1, scan_count + 1):
+                st.text_input(
+                    f"{row['code']} — Job {row['job']} / Lot {row['lot']} — Pallet #{i}",
+                    key=f"scan_{row['code']}_{row['job']}_{row['lot']}_{i}_row{idx}"
+                )
+
+        # 📄 CSV Export
+        df = pd.DataFrame(adjustments)
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇ Export Adjustment CSV", data=csv, file_name="transfer_batch.csv")
+
+        # 🔍 Preview Validation
+        scan_inputs = {k: v for k, v in st.session_state.items() if k.startswith("scan_")}
+        if st.button("🔍 Preview Scan Validity"):
+            try:
+                scan_map = collect_scan_map(adjustments, scan_inputs, input_tx="TRANSFER")
+                validate_scan_items(scan_map, input_tx="TRANSFER", warehouse_sel=warehouse)
+                st.success("✅ No blocking errors detected.")
+            except Exception as e:
+                st.error(f"❌ Validation failed: {e}")
+
+        show_validation_log()
+        export_validation_log_csv()
+
 
 # ───────────────────────────────────────────────────────────────
 #  9.  Dashboard (pending & fulfilled)
 # ───────────────────────────────────────────────────────────────
 def show_pending_pulltags():
+    st.subheader("📥 Pending Pulltags")
+
     wh = st.selectbox("Warehouse", WAREHOUSES, key="dash_p_wh")
+    tx_type = st.selectbox("Transaction Type", ["ADD", "RETURNB", "TRANSFER"], key="dash_p_tx")
+
     with get_db_cursor() as cur:
         cur.execute("""
-          SELECT job_number,lot_number,item_code,quantity,transaction_type,note,last_updated
-          FROM pulltags WHERE status='pending' AND warehouse=%s
-          ORDER BY job_number,last_updated""",(wh,))
-        df = pd.DataFrame(cur.fetchall(), columns=["Job","Lot","Item","Qty","Tx","Note","Updated"])
-    st.dataframe(df); st.download_button("⬇ CSV", df.to_csv(index=False).encode(), file_name="pending.csv")
+            SELECT job_number, lot_number, item_code, quantity, transaction_type, note, last_updated
+            FROM pulltags
+            WHERE status = 'pending'
+              AND warehouse = %s
+              AND transaction_type = %s
+              AND transaction_type IN ('ADD', 'RETURNB', 'TRANSFER')
+            ORDER BY job_number, last_updated
+        """, (wh, tx_type))
+
+        df = pd.DataFrame(cur.fetchall(), columns=["Job", "Lot", "Item", "Qty", "Tx", "Note", "Updated"])
+
+    st.dataframe(df, use_container_width=True)
+    st.download_button("⬇ Export Pending CSV", df.to_csv(index=False).encode(), file_name="pending_pulltags.csv")
+
 
 def show_fulfilled_pulltags():
+    st.subheader("✅ Fulfilled Pulltags")
+
     wh = st.selectbox("Warehouse", WAREHOUSES, key="dash_f_wh")
-    col1,col2=st.columns(2)
-    start,end = col1.date_input("Start", pd.to_datetime("today")-pd.Timedelta(30)), col2.date_input("End", pd.to_datetime("today"))
-    job = st.text_input("Job (opt)"); lot = st.text_input("Lot (opt)")
-    q="SELECT job_number,lot_number,item_code,quantity,transaction_type,note,last_updated FROM pulltags WHERE status='kitted' AND warehouse=%s AND last_updated BETWEEN %s AND %s"
-    p=[wh,start,end]
-    if job: q+=" AND job_number=%s"; p.append(job)
-    if lot: q+=" AND lot_number=%s"; p.append(lot)
-    q+=" ORDER BY last_updated DESC"
-    with get_db_cursor() as cur: cur.execute(q,tuple(p)); df=pd.DataFrame(cur.fetchall(), columns=["Job","Lot","Item","Qty","Tx","Note","Kitted"])
-    st.dataframe(df); st.download_button("⬇ CSV", df.to_csv(index=False).encode(), file_name="fulfilled.csv")
+    tx_type = st.selectbox("Transaction Type", ["ADD", "RETURNB", "TRANSFER"], key="dash_f_tx")
+
+    col1, col2 = st.columns(2)
+    start = col1.date_input("Start Date", pd.to_datetime("today") - pd.Timedelta(30))
+    end = col2.date_input("End Date", pd.to_datetime("today"))
+
+    job = st.text_input("Job Number (optional)")
+    lot = st.text_input("Lot Number (optional)")
+
+    # Base query
+    q = """
+        SELECT job_number, lot_number, item_code, quantity,
+               transaction_type, note, last_updated
+        FROM pulltags
+        WHERE status = 'kitted'
+          AND warehouse = %s
+          AND transaction_type = %s
+          AND transaction_type IN ('ADD', 'RETURNB', 'TRANSFER')
+          AND last_updated BETWEEN %s AND %s
+    """
+    p = [wh, tx_type, start, end]
+
+    if job:
+        q += " AND job_number = %s"
+        p.append(job.strip())
+    if lot:
+        q += " AND lot_number = %s"
+        p.append(lot.strip())
+
+    q += " ORDER BY last_updated DESC"
+
+    with get_db_cursor() as cur:
+        cur.execute(q, tuple(p))
+        df = pd.DataFrame(cur.fetchall(), columns=["Job", "Lot", "Item", "Qty", "Tx", "Note", "Kitted"])
+
+    st.dataframe(df, use_container_width=True)
+    st.download_button("⬇ Export Fulfilled CSV", df.to_csv(index=False).encode(), file_name="fulfilled_pulltags.csv")
+
 
 def dashboard():
-    tab1,tab2 = st.tabs(["📥 Pending","✅ Fulfilled"])
-    with tab1: show_pending_pulltags()
-    with tab2: show_fulfilled_pulltags()
+    st.title("📊 Pulltag Dashboard")
+    tab1, tab2 = st.tabs(["📥 Pending", "✅ Fulfilled"])
+    with tab1:
+        show_pending_pulltags()
+    with tab2:
+        show_fulfilled_pulltags()
 
 # ───────────────────────────────────────────────────────────────
 # 10.  Main navigation
