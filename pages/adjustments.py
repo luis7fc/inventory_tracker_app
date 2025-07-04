@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from collections import defaultdict, Counter
 from enum import Enum
 from config import WAREHOUSES
+from datetime import timedelta
 # ───────────────────────────────────────────────────────────────
 #  0.  ENUMS
 # ───────────────────────────────────────────────────────────────
@@ -853,6 +854,8 @@ def show_fulfilled_pulltags():
     col1, col2 = st.columns(2)
     start = col1.date_input("Start Date", pd.to_datetime("today") - pd.Timedelta(30))
     end = col2.date_input("End Date", pd.to_datetime("today"))
+    start = pd.to_datetime(start)
+    end = pd.to_datetime(end) + timedelta(days=1)
 
     job = st.text_input("Job Number (optional)")
     lot = st.text_input("Lot Number (optional)")
